@@ -1,0 +1,102 @@
+syntax = "proto3";
+
+// Contract between langgraph_service (client) and fpl_data_service (server).
+// Edit this file, then run `make proto` to regenerate Go and Python code.
+package squadscout.v1;
+
+option go_package = "squad_scout/fpl_data_service/gen/squadscout/v1;squadscoutv1";
+
+service FplDataService {
+  // Fuzzy-ish lookup by player name ("saka", "odegaard").
+  rpc SearchPlayers(SearchPlayersRequest) returns (SearchPlayersResponse);
+
+  // Upcoming and past fixtures for one team.
+  rpc GetFixtures(GetFixturesRequest) returns (GetFixturesResponse);
+
+  // One player's stats for one gameweek.
+  rpc GetPlayerGameweekStats(GetPlayerGameweekStatsRequest) returns (GetPlayerGameweekStatsResponse);
+}
+
+// ---------- Players ----------
+
+message Player {
+  int32 id = 1;          // FPL element id
+  string web_name = 2;   // "Saka"
+  string first_name = 3;
+  string second_name = 4;
+  int32 team_id = 5;
+  string team_name = 6;
+  Position position = 7;
+  double price = 8;      // in £m (FPL stores tenths: 105 -> 10.5)
+  int32 total_points = 9;
+  double form = 10;
+  double selected_by_percent = 11;
+  string status = 12;    // "a" available, "i" injured, "d" doubtful, ...
+}
+
+enum Position {
+  POSITION_UNSPECIFIED = 0;
+  POSITION_GOALKEEPER = 1;
+  POSITION_DEFENDER = 2;
+  POSITION_MIDFIELDER = 3;
+  POSITION_FORWARD = 4;
+}
+
+message SearchPlayersRequest {
+  string name = 1;
+  int32 limit = 2;  // 0 = server default
+}
+
+message SearchPlayersResponse {
+  repeated Player players = 1;
+}
+
+// ---------- Fixtures ----------
+
+message Fixture {
+  int32 id = 1;
+  int32 gameweek = 2;
+  int32 home_team_id = 3;
+  string home_team_name = 4;
+  int32 away_team_id = 5;
+  string away_team_name = 6;
+  string kickoff_time = 7;  // RFC 3339
+  int32 home_difficulty = 8;  // FDR 1-5
+  int32 away_difficulty = 9;
+  bool finished = 10;
+  optional int32 home_score = 11;
+  optional int32 away_score = 12;
+}
+
+message GetFixturesRequest {
+  int32 team_id = 1;
+  int32 next_n = 2;  // 0 = all remaining fixtures
+}
+
+message GetFixturesResponse {
+  repeated Fixture fixtures = 1;
+}
+
+// ---------- Stats ----------
+
+message GameweekStats {
+  int32 player_id = 1;
+  int32 gameweek = 2;
+  int32 minutes = 3;
+  int32 goals_scored = 4;
+  int32 assists = 5;
+  int32 clean_sheets = 6;
+  int32 bonus = 7;
+  int32 total_points = 8;
+  double expected_goals = 9;
+  double expected_assists = 10;
+}
+
+message GetPlayerGameweekStatsRequest {
+  int32 player_id = 1;
+  int32 gameweek = 2;
+}
+
+message GetPlayerGameweekStatsResponse {
+  GameweekStats stats = 1;
+}

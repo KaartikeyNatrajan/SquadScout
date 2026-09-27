@@ -1,0 +1,12 @@
+# Always store and check out text files with LF endings, even when edited on
+# Windows. CRLF breaks bash scripts and Makefiles run from WSL.
+* text=auto eol=lf
+
+*.sh     text eol=lf
+Makefile text eol=lf
+*.go     text eol=lf
+*.py     text eol=lf
+*.proto  text eol=lf
+
+*.db     binary
+*.png    binary

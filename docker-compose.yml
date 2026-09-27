@@ -1,0 +1,33 @@
+# Not used yet. For now, run each service directly with `make run-go`,
+# `make run-py` and `make vllm`.
+#
+# When you containerise (after the agent works end to end):
+#   1. Add a Dockerfile to fpl_data_service/ and langgraph_service/.
+#   2. Uncomment below. Inside compose, services reach each other by service
+#      name, which is why every address lives in langgraph_service/src/config.py.
+#   3. Keep vLLM on the WSL host at first. Using the GPU from a container needs
+#      the NVIDIA Container Toolkit.
+
+# services:
+#   fpl_data_service:
+#     build: ./fpl_data_service
+#     environment:
+#       GRPC_ADDR: ":50051"
+#       DB_PATH: /data/fpl.db
+#     volumes:
+#       - fpl_data:/data
+#     ports:
+#       - "50051:50051"
+#
+#   langgraph_service:
+#     build: ./langgraph_service
+#     environment:
+#       FPL_GRPC_ADDR: fpl_data_service:50051
+#       LLM_BASE_URL: http://host.docker.internal:8000/v1
+#     ports:
+#       - "8080:8080"
+#     depends_on:
+#       - fpl_data_service
+#
+# volumes:
+#   fpl_data:

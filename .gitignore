@@ -1,0 +1,29 @@
+# Generated protobuf code (recreate with `make proto`)
+fpl_data_service/gen/
+langgraph_service/src/squadscout/
+
+# Secrets / local config
+.env
+!.env.example
+
+# Go
+fpl_data_service/data/
+*.db
+*.db-shm
+*.db-wal
+/bin/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Editors / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
