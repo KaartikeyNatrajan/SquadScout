@@ -13,5 +13,7 @@ def test_graph_compiles():
 def test_health():
     from server import app
 
+    # TestClient calls the app in-process, no real server or port needed.
+    # The `with` block runs the lifespan startup/shutdown code too.
     with TestClient(app) as client:
         assert client.get("/health").json() == {"status": "ok"}

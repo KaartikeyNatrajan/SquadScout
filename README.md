@@ -30,14 +30,7 @@ The contract between the two services is `proto/squadscout/v1/fpl.proto`. Edit i
 
 ```bash
 # 1. Base tools
-sudo apt update && sudo apt install -y build-essential git curl
-
-# 2. Go: get the latest linux-amd64 version number from https://go.dev/dl/
-GO_VERSION=1.xx.x
-curl -LO https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz
-sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc && source ~/.bashrc
-go version
+sudo apt update && sudo apt install -y build-essential git curl golang-go
 
 # 3. uv (manages Python and the Python deps)
 curl -LsSf https://astral.sh/uv/install.sh | sh && source ~/.bashrc

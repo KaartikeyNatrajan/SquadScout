@@ -21,6 +21,8 @@ const defaultBaseURL = "https://fantasy.premierleague.com/api"
 // The FPL API sometimes returns 403 to requests without a browser-like UA.
 const userAgent = "Mozilla/5.0 (compatible; squad-scout/0.1)"
 
+// Client holds the base URL and a reusable HTTP client (reusing it keeps
+// connections open between requests).
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -33,6 +35,10 @@ func NewClient() *Client {
 	}
 }
 
+// The structs below mirror the JSON the FPL API sends. The `json:"..."` tags
+// tell Go's JSON decoder which JSON key fills which field; keys we don't list
+// are simply ignored.
+//
 // Bootstrap is a partial view of /bootstrap-static/. Add fields as you need them.
 type Bootstrap struct {
 	Elements []Element `json:"elements"`
@@ -40,6 +46,7 @@ type Bootstrap struct {
 	Events   []Event   `json:"events"`
 }
 
+// Element is FPL's name for a player.
 type Element struct {
 	ID                int    `json:"id"`
 	WebName           string `json:"web_name"`
@@ -60,6 +67,7 @@ type Team struct {
 	ShortName string `json:"short_name"`
 }
 
+// Event is FPL's name for a gameweek.
 type Event struct {
 	ID         int    `json:"id"`
 	Name       string `json:"name"`
@@ -69,6 +77,8 @@ type Event struct {
 	IsFinished bool   `json:"finished"`
 }
 
+// FetchBootstrap downloads /bootstrap-static/ (every player, team and gameweek
+// in one big JSON document). Not called anywhere yet.
 func (c *Client) FetchBootstrap(ctx context.Context) (*Bootstrap, error) {
 	var out Bootstrap
 	if err := c.getJSON(ctx, "/bootstrap-static/", &out); err != nil {
@@ -79,6 +89,8 @@ func (c *Client) FetchBootstrap(ctx context.Context) (*Bootstrap, error) {
 
 // TODO: FetchFixtures(ctx, gw), FetchElementSummary(ctx, playerID)
 
+// getJSON does a GET request and decodes the JSON body into dst. dst must be
+// a pointer (e.g. &out) so the decoder can fill in the caller's variable.
 func (c *Client) getJSON(ctx context.Context, path string, dst any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
@@ -91,7 +103,7 @@ func (c *Client) getJSON(ctx context.Context, path string, dst any) error {
 	if err != nil {
 		return fmt.Errorf("GET %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() // always close the body, or the connection leaks
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET %s: unexpected status %d", path, resp.StatusCode)

@@ -1,3 +1,6 @@
+// Tests for the gRPC handlers. `go test ./...` (or `make test`) runs every
+// function whose name starts with Test. They call the methods directly, so no
+// server or network is needed.
 package handlers
 
 import (
@@ -11,6 +14,7 @@ import (
 )
 
 func TestSearchPlayers_EmptyNameIsInvalid(t *testing.T) {
+	// nil store and client are fine: the code paths tested don't use them yet.
 	svc := NewFplService(nil, nil)
 
 	_, err := svc.SearchPlayers(context.Background(), &pb.SearchPlayersRequest{Name: "  "})

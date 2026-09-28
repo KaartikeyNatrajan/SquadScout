@@ -2,6 +2,14 @@ syntax = "proto3";
 
 // Contract between langgraph_service (client) and fpl_data_service (server).
 // Edit this file, then run `make proto` to regenerate Go and Python code.
+//
+// How to read it:
+//   service ... { rpc X(Req) returns (Resp); }  = a remote function: the Python
+//       side calls X with a Req message and gets a Resp back.
+//   message = a data structure (like a class with only fields).
+//   The "= 1", "= 2" after each field are NOT default values. They are field
+//   numbers used in the binary wire format. Never change or reuse them once
+//   in use; add new fields with new numbers instead.
 package squadscout.v1;
 
 option go_package = "squad_scout/fpl_data_service/gen/squadscout/v1;squadscoutv1";
@@ -20,13 +28,13 @@ service FplDataService {
 // ---------- Players ----------
 
 message Player {
-  int32 id = 1;          // FPL element id
+  int32 id = 1;          // FPL element id (FPL calls players "elements")
   string web_name = 2;   // "Saka"
   string first_name = 3;
   string second_name = 4;
   int32 team_id = 5;
   string team_name = 6;
-  Position position = 7;
+  Position position = 7;  // enum, defined below
   double price = 8;      // in £m (FPL stores tenths: 105 -> 10.5)
   int32 total_points = 9;
   double form = 10;
@@ -34,6 +42,8 @@ message Player {
   string status = 12;    // "a" available, "i" injured, "d" doubtful, ...
 }
 
+// Proto3 enums must start at 0, and 0 is the default when a field is unset,
+// so 0 is reserved for "unknown".
 enum Position {
   POSITION_UNSPECIFIED = 0;
   POSITION_GOALKEEPER = 1;
@@ -48,7 +58,7 @@ message SearchPlayersRequest {
 }
 
 message SearchPlayersResponse {
-  repeated Player players = 1;
+  repeated Player players = 1;  // "repeated" = a list
 }
 
 // ---------- Fixtures ----------
@@ -64,6 +74,7 @@ message Fixture {
   int32 home_difficulty = 8;  // FDR 1-5
   int32 away_difficulty = 9;
   bool finished = 10;
+  // "optional" lets the reader tell "not set" (match not played) apart from 0.
   optional int32 home_score = 11;
   optional int32 away_score = 12;
 }

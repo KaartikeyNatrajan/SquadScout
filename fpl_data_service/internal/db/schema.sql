@@ -1,7 +1,12 @@
 -- Applied on every startup, so every statement must be idempotent.
+-- ("Idempotent" = running it twice has the same effect as once; that is what
+-- IF NOT EXISTS gives us.)
+--
+-- This is a local cache of FPL data. Right now the tables are created but stay
+-- empty: nothing writes to them yet (next task: sync from /bootstrap-static/).
 
 CREATE TABLE IF NOT EXISTS teams (
-    id          INTEGER PRIMARY KEY,
+    id          INTEGER PRIMARY KEY,                -- FPL's own team id (Arsenal = 1)
     name        TEXT NOT NULL,
     short_name  TEXT NOT NULL
 );
@@ -21,6 +26,7 @@ CREATE TABLE IF NOT EXISTS players (
     status               TEXT NOT NULL DEFAULT 'a',
     updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- An index makes lookups by search_name fast (like a book index).
 CREATE INDEX IF NOT EXISTS idx_players_search_name ON players(search_name);
 
 CREATE TABLE IF NOT EXISTS fixtures (
@@ -38,6 +44,8 @@ CREATE TABLE IF NOT EXISTS fixtures (
 CREATE INDEX IF NOT EXISTS idx_fixtures_home ON fixtures(home_team_id, gameweek);
 CREATE INDEX IF NOT EXISTS idx_fixtures_away ON fixtures(away_team_id, gameweek);
 
+-- One row per player per gameweek; the two-column PRIMARY KEY below means
+-- a (player, gameweek) pair can only appear once.
 CREATE TABLE IF NOT EXISTS player_gameweek_stats (
     player_id         INTEGER NOT NULL REFERENCES players(id),
     gameweek          INTEGER NOT NULL,
