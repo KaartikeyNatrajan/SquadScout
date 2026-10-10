@@ -14,15 +14,27 @@ package squadscout.v1;
 
 option go_package = "squad_scout/fpl_data_service/gen/squadscout/v1;squadscoutv1";
 
+// All player-specific RPCs take the player's FPL id, which comes from
+// SearchPlayers. None of them needs a gameweek number from the caller except
+// GetPlayerGameweekStats.
 service FplDataService {
-  // Fuzzy-ish lookup by player name ("saka", "odegaard").
+  // Find players by name ("saka", "odegaard"), ignoring case and accents.
+  // Best total points first, so the most likely match comes first.
   rpc SearchPlayers(SearchPlayersRequest) returns (SearchPlayersResponse);
 
-  // Upcoming and past fixtures for one team.
+  // A team's next fixtures, soonest first.
   rpc GetFixtures(GetFixturesRequest) returns (GetFixturesResponse);
 
   // One player's stats for one gameweek.
   rpc GetPlayerGameweekStats(GetPlayerGameweekStatsRequest) returns (GetPlayerGameweekStatsResponse);
+
+  // One player's most recent matches plus totals over them
+  // ("how has X been playing lately?").
+  rpc GetPlayerRecentForm(GetPlayerRecentFormRequest) returns (GetPlayerRecentFormResponse);
+
+  // One player's next fixtures from his team's point of view (opponent,
+  // home/away, difficulty), plus FPL's expected points for the next gameweek.
+  rpc GetPlayerFixtures(GetPlayerFixturesRequest) returns (GetPlayerFixturesResponse);
 }
 
 // ---------- Players ----------
@@ -37,9 +49,35 @@ message Player {
   Position position = 7;  // enum, defined below
   double price = 8;      // in £m (FPL stores tenths: 105 -> 10.5)
   int32 total_points = 9;
-  double form = 10;
+  double form = 10;      // average points per match over roughly the last 30 days
   double selected_by_percent = 11;
-  string status = 12;    // "a" available, "i" injured, "d" doubtful, ...
+  string status = 12;    // FPL's code: "a" available, "d" doubtful, "i" injured, ...
+
+  // Availability in plain words, so the reader doesn't need FPL's codes:
+  // "available", "doubtful", "injured", "suspended", "unavailable", "ineligible".
+  string availability = 13;
+  // Injury or transfer news, e.g. "Hamstring injury - 75% chance of playing".
+  // Empty when there is none.
+  string news = 14;
+  // 0-100. Unset means FPL has no concerns (normally fully fit), which is
+  // different from 0 (definitely out); "optional" keeps the two apart.
+  optional int32 chance_of_playing_next_round = 15;
+
+  // Season totals so far.
+  int32 minutes = 16;
+  int32 starts = 17;
+  int32 goals_scored = 18;
+  int32 assists = 19;
+  int32 clean_sheets = 20;
+  int32 bonus = 21;
+  double expected_goals = 22;              // xG
+  double expected_assists = 23;            // xA
+  double expected_goal_involvements = 24;  // xG + xA
+  double points_per_game = 25;
+
+  // FPL's own projection of this player's points in the next gameweek
+  // (all of his matches in it, if he has two).
+  double expected_points_next = 26;
 }
 
 // Proto3 enums must start at 0, and 0 is the default when a field is unset,
@@ -54,25 +92,25 @@ enum Position {
 
 message SearchPlayersRequest {
   string name = 1;
-  int32 limit = 2;  // 0 = server default
+  int32 limit = 2;  // 0 = server default (5); at most 20
 }
 
 message SearchPlayersResponse {
-  repeated Player players = 1;  // "repeated" = a list
+  repeated Player players = 1;  // "repeated" = a list; empty when nothing matches
 }
 
 // ---------- Fixtures ----------
 
 message Fixture {
   int32 id = 1;
-  int32 gameweek = 2;
+  int32 gameweek = 2;  // 0 if not scheduled yet (e.g. postponed)
   int32 home_team_id = 3;
   string home_team_name = 4;
   int32 away_team_id = 5;
   string away_team_name = 6;
-  string kickoff_time = 7;  // RFC 3339
-  int32 home_difficulty = 8;  // FDR 1-5
-  int32 away_difficulty = 9;
+  string kickoff_time = 7;  // RFC 3339, e.g. "2026-10-10T11:30:00Z"; empty if not scheduled
+  int32 home_difficulty = 8;  // FDR 1 (easy) - 5 (hard) for the home team
+  int32 away_difficulty = 9;  // the same for the away team
   bool finished = 10;
   // "optional" lets the reader tell "not set" (match not played) apart from 0.
   optional int32 home_score = 11;
@@ -85,11 +123,39 @@ message GetFixturesRequest {
 }
 
 message GetFixturesResponse {
-  repeated Fixture fixtures = 1;
+  repeated Fixture fixtures = 1;  // soonest first
+}
+
+// One upcoming fixture seen from one team's side, so the reader doesn't have
+// to work out which half of a Fixture applies to the player.
+message PlayerFixture {
+  int32 fixture_id = 1;
+  int32 gameweek = 2;       // 0 if not scheduled yet
+  string kickoff_time = 3;  // RFC 3339; empty if not scheduled
+  int32 opponent_team_id = 4;
+  string opponent_team_name = 5;
+  bool is_home = 6;
+  int32 difficulty = 7;     // FDR 1 (easy) - 5 (hard) for the player's team
+}
+
+message GetPlayerFixturesRequest {
+  int32 player_id = 1;
+  int32 next_n = 2;  // 0 = server default (5); at most 10
+}
+
+message GetPlayerFixturesResponse {
+  int32 player_id = 1;
+  string web_name = 2;
+  string team_name = 3;
+  int32 next_gameweek = 4;          // 0 once the season is over
+  double expected_points_next = 5;  // FPL's projection for next_gameweek
+  repeated PlayerFixture fixtures = 6;  // soonest first
 }
 
 // ---------- Stats ----------
 
+// One player's stats for one match. (GetPlayerGameweekStatsResponse.stats
+// also uses it for a whole gameweek's totals.)
 message GameweekStats {
   int32 player_id = 1;
   int32 gameweek = 2;
@@ -98,9 +164,25 @@ message GameweekStats {
   int32 assists = 5;
   int32 clean_sheets = 6;
   int32 bonus = 7;
-  int32 total_points = 8;
+  int32 total_points = 8;  // FPL points
   double expected_goals = 9;
   double expected_assists = 10;
+
+  // Which match this was. Left empty in gameweek totals that cover two matches.
+  int32 fixture_id = 11;
+  int32 opponent_team_id = 12;
+  string opponent_team_name = 13;
+  bool was_home = 14;
+  string kickoff_time = 15;      // RFC 3339
+  optional int32 team_score = 16;      // the player's team's goals
+  optional int32 opponent_score = 17;
+
+  int32 starts = 18;  // 1 if he started, 0 if he came off the bench or didn't play
+  int32 goals_conceded = 19;
+  int32 saves = 20;
+  int32 yellow_cards = 21;
+  int32 red_cards = 22;
+  double expected_goal_involvements = 23;
 }
 
 message GetPlayerGameweekStatsRequest {
@@ -109,5 +191,35 @@ message GetPlayerGameweekStatsRequest {
 }
 
 message GetPlayerGameweekStatsResponse {
+  // Totals for the gameweek. Equal to the single match in a normal gameweek.
   GameweekStats stats = 1;
+  // One entry per match: usually one, two in a "double gameweek".
+  repeated GameweekStats matches = 2;
+}
+
+message GetPlayerRecentFormRequest {
+  int32 player_id = 1;
+  int32 last_n = 2;  // number of matches; 0 = server default (5); at most 10
+}
+
+message GetPlayerRecentFormResponse {
+  int32 player_id = 1;
+  string web_name = 2;
+  repeated GameweekStats matches = 3;  // most recent first
+  FormSummary summary = 4;             // totals over `matches`
+}
+
+// Totals over a run of matches, so the reader doesn't have to add them up.
+message FormSummary {
+  int32 matches = 1;      // matches covered, including ones he didn't play in
+  int32 appearances = 2;  // matches in which he played at least one minute
+  int32 minutes = 3;
+  int32 goals_scored = 4;
+  int32 assists = 5;
+  int32 clean_sheets = 6;
+  int32 bonus = 7;
+  int32 total_points = 8;
+  double expected_goals = 9;
+  double expected_assists = 10;
+  double points_per_match = 11;  // total_points / matches
 }
