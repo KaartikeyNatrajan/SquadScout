@@ -38,7 +38,7 @@ func TestUpsertBootstrap(t *testing.T) {
 		t.Errorf("last sync should be just now, got %s", last)
 	}
 
-	for table, want := range map[string]int{"teams": 20, "events": 38, "players": 667, "sync_log": 1} {
+	for table, want := range map[string]int{"teams": 20, "events": 38, "chips": 8, "players": 667, "sync_log": 1} {
 		if got := countRows(t, store, table); got != want {
 			t.Errorf("%s: want %d rows, got %d", table, want, got)
 		}
@@ -74,6 +74,11 @@ func TestUpsertBootstrap_PlayerFields(t *testing.T) {
 		t.Errorf("Saka chance of playing: want nil (no concerns), got %d", *saka.ChanceOfPlayingNextRound)
 	}
 
+	// Transfer activity since the last deadline.
+	if saka.TransfersInEvent != 99910 || saka.TransfersOutEvent != 44545 {
+		t.Errorf("Saka transfers: want 99910 in, 44545 out; got %d, %d", saka.TransfersInEvent, saka.TransfersOutEvent)
+	}
+
 	// White (id 10) is doubtful: status, news and a 75% chance.
 	white, _, err := store.GetPlayer(ctx, 10)
 	if err != nil {
@@ -101,7 +106,33 @@ func TestNextGameweek(t *testing.T) {
 	}
 	// The saved bootstrap is from during gameweek 5.
 	gw, ok, err := store.NextGameweek(ctx)
-	if err != nil || !ok || gw != 6 {
-		t.Errorf("want gameweek 6, got %d (ok=%v err=%v)", gw, ok, err)
+	if err != nil || !ok || gw.ID != 6 || gw.Deadline != "2026-10-10T10:00:00Z" {
+		t.Errorf("want gameweek 6 with its deadline, got %+v (ok=%v err=%v)", gw, ok, err)
+	}
+}
+
+func TestChips(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	if err := store.UpsertBootstrap(ctx, loadBootstrap(t)); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	chips, err := store.Chips(ctx)
+	if err != nil {
+		t.Fatalf("Chips: %v", err)
+	}
+	// Two of each chip: one for gameweeks 1/2-19, one for 20-38.
+	wildcards := 0
+	for _, c := range chips {
+		if c.Name == "wildcard" {
+			wildcards++
+			if c.StopEvent != 19 && c.StartEvent != 20 {
+				t.Errorf("unexpected wildcard window %d-%d", c.StartEvent, c.StopEvent)
+			}
+		}
+	}
+	if len(chips) != 8 || wildcards != 2 {
+		t.Errorf("want 8 allowances including 2 wildcards, got %d and %d", len(chips), wildcards)
 	}
 }

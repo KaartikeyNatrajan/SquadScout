@@ -21,7 +21,7 @@ func search(t *testing.T, svc *FplService, name string, limit int32) []*pb.Playe
 
 func TestSearchPlayers_EmptyNameIsInvalid(t *testing.T) {
 	// A nil store is fine: the handler rejects the name before using it.
-	svc := NewFplService(nil, nil)
+	svc := NewFplService(nil, nil, nil)
 
 	_, err := svc.SearchPlayers(context.Background(), &pb.SearchPlayersRequest{Name: "  "})
 
@@ -107,4 +107,67 @@ func TestSearchPlayers_Limits(t *testing.T) {
 			t.Errorf("limit %d: want %d players, got %d", tc.limit, tc.want, got)
 		}
 	}
+}
+
+func TestFindPlayers(t *testing.T) {
+	svc, _ := newTestService(t)
+
+	// The best midfielders at £5.7m or less by expected points (the default sort).
+	resp, err := svc.FindPlayers(context.Background(), &pb.FindPlayersRequest{
+		Position: pb.Position_POSITION_MIDFIELDER,
+		MaxPrice: 5.7,
+		Limit:    5,
+	})
+	if err != nil {
+		t.Fatalf("FindPlayers: %v", err)
+	}
+	players := resp.GetPlayers()
+	if len(players) != 5 {
+		t.Fatalf("want 5 players, got %d", len(players))
+	}
+	for i, o := range players {
+		p := o.GetPlayer()
+		if p.GetPosition() != pb.Position_POSITION_MIDFIELDER || p.GetPrice() > 5.7 {
+			t.Errorf("%s (%v, £%vm) breaks the filter", p.GetWebName(), p.GetPosition(), p.GetPrice())
+		}
+		if len(o.GetNextFixtures()) != outlookFixtures {
+			t.Errorf("%s: want %d next fixtures, got %d", p.GetWebName(), outlookFixtures, len(o.GetNextFixtures()))
+		}
+		if i > 0 && p.GetExpectedPointsNext() > players[i-1].GetPlayer().GetExpectedPointsNext() {
+			t.Errorf("not sorted by expected points")
+		}
+	}
+}
+
+func TestFindPlayers_ExcludesSquad(t *testing.T) {
+	svc, _ := newTestService(t)
+
+	// Groß (124) is the top midfielder by expected points, and team 6 owns him.
+	resp, err := svc.FindPlayers(context.Background(), &pb.FindPlayersRequest{
+		Position:             pb.Position_POSITION_MIDFIELDER,
+		Limit:                20,
+		ExcludeSquadOfTeamId: 6,
+	})
+	if err != nil {
+		t.Fatalf("FindPlayers: %v", err)
+	}
+	for _, o := range resp.GetPlayers() {
+		if o.GetPlayer().GetId() == 124 {
+			t.Error("Groß is in team 6's squad and should have been left out")
+		}
+	}
+}
+
+func TestFindPlayers_BadRequests(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	_, err := svc.FindPlayers(ctx, &pb.FindPlayersRequest{MaxPrice: -1})
+	wantCode(t, err, codes.InvalidArgument)
+
+	_, err = svc.FindPlayers(ctx, &pb.FindPlayersRequest{SortBy: pb.PlayerSort(99)})
+	wantCode(t, err, codes.InvalidArgument)
+
+	_, err = svc.FindPlayers(ctx, &pb.FindPlayersRequest{ExcludeSquadOfTeamId: 999})
+	wantCode(t, err, codes.NotFound)
 }

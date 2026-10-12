@@ -8,7 +8,7 @@ import (
 	"squad_scout/fpl_data_service/internal/names"
 )
 
-// UpsertBootstrap saves the teams, gameweeks and players from
+// UpsertBootstrap saves the teams, gameweeks, chip allowances and players from
 // /bootstrap-static/ and records the sync. It is all-or-nothing: if any row
 // fails, nothing is saved.
 //
@@ -67,6 +67,20 @@ func (s *Store) UpsertBootstrap(ctx context.Context, b *fpl.Bootstrap) error {
 		}
 	}
 
+	// Chip allowances. Plain DELETE + INSERT: there are only 8 rows, and FPL
+	// could in principle drop one, which an upsert would leave behind.
+	if _, err := tx.ExecContext(ctx, "DELETE FROM chips"); err != nil {
+		return fmt.Errorf("clear chips: %w", err)
+	}
+	for _, c := range b.Chips {
+		_, err := tx.ExecContext(ctx,
+			"INSERT INTO chips (id, name, start_event, stop_event) VALUES (?, ?, ?, ?)",
+			c.ID, c.Name, c.StartEvent, c.StopEvent)
+		if err != nil {
+			return fmt.Errorf("insert chip %d: %w", c.ID, err)
+		}
+	}
+
 	// Players. The column list, the ?s and the ExecContext arguments below
 	// must stay in the same order. updated_at is set in the UPDATE branch
 	// because a column DEFAULT only applies on INSERT.
@@ -77,9 +91,10 @@ func (s *Store) UpsertBootstrap(ctx context.Context, b *fpl.Bootstrap) error {
 			chance_of_playing_next_round,
 			minutes, starts, goals_scored, assists, clean_sheets, bonus,
 			expected_goals, expected_assists, expected_goal_involvements,
-			points_per_game, ep_next
+			points_per_game, ep_next, news_added,
+			transfers_in_event, transfers_out_event, cost_change_event
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			web_name = excluded.web_name,
 			first_name = excluded.first_name,
@@ -105,6 +120,10 @@ func (s *Store) UpsertBootstrap(ctx context.Context, b *fpl.Bootstrap) error {
 			expected_goal_involvements = excluded.expected_goal_involvements,
 			points_per_game = excluded.points_per_game,
 			ep_next = excluded.ep_next,
+			news_added = excluded.news_added,
+			transfers_in_event = excluded.transfers_in_event,
+			transfers_out_event = excluded.transfers_out_event,
+			cost_change_event = excluded.cost_change_event,
 			updated_at = datetime('now')`)
 	if err != nil {
 		return fmt.Errorf("prepare players: %w", err)
@@ -136,7 +155,8 @@ func (s *Store) UpsertBootstrap(ctx context.Context, b *fpl.Bootstrap) error {
 			p.ChanceOfPlayingNextRound,
 			p.Minutes, p.Starts, p.GoalsScored, p.Assists, p.CleanSheets, p.Bonus,
 			xG, xA, xGI,
-			pointsPerGame, epNext,
+			pointsPerGame, epNext, p.NewsAdded,
+			p.TransfersInEvent, p.TransfersOutEvent, p.CostChangeEvent,
 		)
 		if err != nil {
 			return fmt.Errorf("upsert player %d: %w", p.ID, err)

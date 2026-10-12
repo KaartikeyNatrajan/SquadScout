@@ -3,6 +3,7 @@ package fpl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -110,8 +111,8 @@ func TestFetch_ErrorStatus(t *testing.T) {
 
 	// No saved history for player 99999, so the fake answers 404 like the real API.
 	_, err := client.FetchElementSummary(context.Background(), 99999)
-	if err == nil || !strings.Contains(err.Error(), "404") {
-		t.Errorf("unknown player: want a 404 error, got %v", err)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown player: want ErrNotFound, got %v", err)
 	}
 
 	srv.SetDown(true)

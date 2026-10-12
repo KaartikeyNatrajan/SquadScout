@@ -15,9 +15,12 @@ package squadscout.v1;
 option go_package = "squad_scout/fpl_data_service/gen/squadscout/v1;squadscoutv1";
 
 // All player-specific RPCs take the player's FPL id, which comes from
-// SearchPlayers. None of them needs a gameweek number from the caller except
-// GetPlayerGameweekStats.
+// SearchPlayers or FindPlayers. Manager RPCs take the manager's FPL team id
+// (the number in the URL of their FPL points page). None of them needs a
+// gameweek number from the caller except GetPlayerGameweekStats.
 service FplDataService {
+  // ----- Players and fixtures -----
+
   // Find players by name ("saka", "odegaard"), ignoring case and accents.
   // Best total points first, so the most likely match comes first.
   rpc SearchPlayers(SearchPlayersRequest) returns (SearchPlayersResponse);
@@ -35,6 +38,27 @@ service FplDataService {
   // One player's next fixtures from his team's point of view (opponent,
   // home/away, difficulty), plus FPL's expected points for the next gameweek.
   rpc GetPlayerFixtures(GetPlayerFixturesRequest) returns (GetPlayerFixturesResponse);
+
+  // Players matching filters (position, price, availability), best first by
+  // a chosen measure. For finding transfer targets.
+  rpc FindPlayers(FindPlayersRequest) returns (FindPlayersResponse);
+
+  // The most transferred in (or out) players for the next gameweek.
+  rpc GetTransferTrends(GetTransferTrendsRequest) returns (GetTransferTrendsResponse);
+
+  // ----- A manager's team -----
+
+  // A manager's squad with each player's availability, expected points and
+  // next fixtures, plus bank, free transfers and chips left.
+  rpc GetManagerTeam(GetManagerTeamRequest) returns (GetManagerTeamResponse);
+
+  // Checks a set of transfers against every FPL squad rule (the "verifier")
+  // and reports the cost (points hit, money) and expected points gained.
+  rpc EvaluateTransfers(EvaluateTransfersRequest) returns (EvaluateTransfersResponse);
+
+  // Searches for the best transfers. NOT IMPLEMENTED YET: returns UNIMPLEMENTED.
+  // The wiring is in place; the search itself lives in internal/optimizer.
+  rpc SuggestTransfers(SuggestTransfersRequest) returns (SuggestTransfersResponse);
 }
 
 // ---------- Players ----------
@@ -78,6 +102,12 @@ message Player {
   // FPL's own projection of this player's points in the next gameweek
   // (all of his matches in it, if he has two).
   double expected_points_next = 26;
+
+  // Transfer activity since the last deadline, across all FPL managers.
+  int32 transfers_in_event = 27;
+  int32 transfers_out_event = 28;
+  double price_change_event = 29;  // £m change since the last deadline, e.g. 0.1 or -0.1
+  string news_added = 30;          // when `news` was last updated (RFC 3339); empty if no news
 }
 
 // Proto3 enums must start at 0, and 0 is the default when a field is unset,
@@ -120,6 +150,9 @@ message Fixture {
 message GetFixturesRequest {
   int32 team_id = 1;
   int32 next_n = 2;  // 0 = all remaining fixtures
+  // Alternative to team_id: the team's name or short name, e.g. "Arsenal",
+  // "Man Utd" or "ARS". Ignored if team_id is set.
+  string team_name = 3;
 }
 
 message GetFixturesResponse {
@@ -222,4 +255,153 @@ message FormSummary {
   double expected_goals = 9;
   double expected_assists = 10;
   double points_per_match = 11;  // total_points / matches
+}
+
+// ---------- Finding players ----------
+
+// A player plus his next few fixtures: enough to judge him as a transfer
+// target without another call.
+message PlayerOutlook {
+  Player player = 1;
+  repeated PlayerFixture next_fixtures = 2;  // the next 3, soonest first
+}
+
+// What FindPlayers sorts by, best first.
+enum PlayerSort {
+  PLAYER_SORT_UNSPECIFIED = 0;     // = PLAYER_SORT_EXPECTED_POINTS
+  PLAYER_SORT_EXPECTED_POINTS = 1; // FPL's expected points for the next gameweek
+  PLAYER_SORT_FORM = 2;
+  PLAYER_SORT_TOTAL_POINTS = 3;
+  PLAYER_SORT_POINTS_PER_GAME = 4;
+}
+
+message FindPlayersRequest {
+  Position position = 1;     // POSITION_UNSPECIFIED = any position
+  double max_price = 2;      // £m; 0 = no limit
+  PlayerSort sort_by = 3;
+  int32 limit = 4;           // 0 = server default (5); at most 20
+  // By default injured, suspended and unavailable players are left out
+  // (doubtful ones stay in). Set this to include them.
+  bool include_unavailable = 5;
+  // If set, players already in this manager's squad are left out, so every
+  // result is a possible transfer in.
+  int32 exclude_squad_of_team_id = 6;
+}
+
+message FindPlayersResponse {
+  repeated PlayerOutlook players = 1;
+}
+
+enum TransferDirection {
+  TRANSFER_DIRECTION_UNSPECIFIED = 0;  // = TRANSFER_DIRECTION_IN
+  TRANSFER_DIRECTION_IN = 1;
+  TRANSFER_DIRECTION_OUT = 2;
+}
+
+message GetTransferTrendsRequest {
+  TransferDirection direction = 1;
+  int32 limit = 2;  // 0 = server default (5); at most 20
+}
+
+message GetTransferTrendsResponse {
+  int32 gameweek = 1;  // the gameweek these transfers are being made for
+  repeated PlayerOutlook players = 2;  // most transferred first
+}
+
+// ---------- A manager's team ----------
+
+message SquadPlayer {
+  Player player = 1;
+  repeated PlayerFixture next_fixtures = 2;  // the next 3, soonest first
+  int32 squad_position = 3;  // 1-11 starting XI, 12-15 bench in substitution order
+  bool is_captain = 4;
+  bool is_vice_captain = 5;
+  // What the manager would get for selling him (£m). FPL keeps only half of
+  // any price rise since he was bought.
+  double selling_price = 6;
+  // True if we don't know what he was bought for (e.g. he has been in the
+  // squad since the start), so selling_price is just his current price.
+  bool selling_price_is_estimate = 7;
+}
+
+message GetManagerTeamRequest {
+  int32 team_id = 1;  // the manager's FPL team id
+}
+
+message GetManagerTeamResponse {
+  int32 team_id = 1;
+  string team_name = 2;
+  string manager_name = 3;
+  int32 overall_points = 4;
+  int32 overall_rank = 5;
+  // The gameweek whose squad this is. FPL only reveals a squad after the
+  // deadline, so this is the last deadline's squad (or the one before it,
+  // after a Free Hit, because the squad returns to normal afterwards).
+  int32 squad_gameweek = 6;
+  int32 next_gameweek = 7;
+  string next_deadline = 8;  // RFC 3339
+  double bank = 9;           // £m in the bank
+  double squad_value = 10;   // £m, the sum of selling prices
+  int32 free_transfers = 11; // for next_gameweek; an estimate, see notes
+  repeated string chips_available = 12;  // "wildcard", "freehit", "bboost" (Bench Boost), "3xc" (Triple Captain)
+  repeated SquadPlayer players = 13;     // in squad_position order
+  repeated string notes = 14;            // caveats about the data above, in plain words
+}
+
+// ---------- Evaluating transfers ----------
+
+message EvaluateTransfersRequest {
+  int32 team_id = 1;
+  // Players leaving and joining. Both lists must be the same length; order
+  // doesn't matter (the squad rules are checked on the final squad).
+  repeated int32 player_out_ids = 2;
+  repeated int32 player_in_ids = 3;
+  // The most points the manager accepts losing to extra transfers (4 per
+  // transfer beyond the free ones). Unset = no limit; 0 = free transfers only.
+  optional int32 max_hit = 4;
+  // "wildcard" or "freehit" to make every transfer free (must be available).
+  string chip = 5;
+}
+
+message EvaluateTransfersResponse {
+  // True if the transfers are allowed: the final squad obeys every FPL rule
+  // and the hit is within max_hit.
+  bool valid = 1;
+  repeated string violations = 2;  // why not, in plain words; empty when valid
+
+  int32 transfers = 3;
+  int32 free_transfers = 4;  // an estimate, see GetManagerTeam
+  int32 hit = 5;             // points deducted, e.g. 4 or 8; 0 if all free
+
+  double bank_before = 6;    // £m
+  double bank_after = 7;     // £m; negative means unaffordable
+
+  // FPL's expected points for the next gameweek only. Ignores who would
+  // actually start, so treat it as a rough guide.
+  double expected_points_out = 8;   // sum over players leaving
+  double expected_points_in = 9;    // sum over players joining
+  double expected_points_net = 10;  // in - out - hit
+
+  repeated PlayerOutlook players_out = 11;
+  repeated PlayerOutlook players_in = 12;
+  repeated string notes = 13;
+}
+
+// ---------- Suggesting transfers (not implemented yet) ----------
+
+message SuggestTransfersRequest {
+  int32 team_id = 1;
+  int32 max_transfers = 2;  // 0 = up to the free transfers available
+  optional int32 max_hit = 3;
+}
+
+message TransferSuggestion {
+  repeated int32 player_out_ids = 1;
+  repeated int32 player_in_ids = 2;
+  int32 hit = 3;
+  double expected_points_gain = 4;  // after the hit
+}
+
+message SuggestTransfersResponse {
+  repeated TransferSuggestion suggestions = 1;  // best first
 }

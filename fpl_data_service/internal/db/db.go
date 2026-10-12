@@ -6,8 +6,9 @@
 //	db.go          opening the database, schema versioning
 //	sync_log.go    when each dataset was last downloaded
 //	bootstrap.go   teams, gameweeks and players (from /bootstrap-static/)
-//	players.go     player lookups
-//	gameweeks.go   gameweek lookups
+//	players.go     player lookups, filtered search, transfer trends
+//	teams.go       team lookups
+//	gameweeks.go   gameweeks and chip allowances
 //	fixtures.go    fixtures (from /fixtures/)
 //	history.go     per-match player stats (from /element-summary/{id}/)
 package db
@@ -30,7 +31,7 @@ import (
 var schema string
 
 // schemaVersion must be increased whenever schema.sql changes. See resetIfOutdated.
-const schemaVersion = 2
+const schemaVersion = 3
 
 // allTables lists every table this service has ever created, children before
 // parents, so dropping them in this order never breaks a REFERENCES rule.
@@ -42,6 +43,7 @@ var allTables = []string{
 	"players",
 	"events",
 	"teams",
+	"chips",
 	"sync_log",
 }
 

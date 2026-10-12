@@ -43,9 +43,8 @@ func toPlayer(p db.PlayerRow) *pb.Player {
 		TeamId:     int32(p.TeamID),
 		TeamName:   p.TeamName,
 		// The db's 1-4 match the proto enum's numbers, so a cast is enough.
-		Position: pb.Position(p.Position),
-		// Convert before dividing: 95/10 in integer maths is 9, not 9.5.
-		Price:                    float64(p.NowCost) / 10,
+		Position:                 pb.Position(p.Position),
+		Price:                    pounds(p.NowCost),
 		TotalPoints:              int32(p.TotalPoints),
 		Form:                     p.Form,
 		SelectedByPercent:        p.SelectedByPercent,
@@ -64,6 +63,10 @@ func toPlayer(p db.PlayerRow) *pb.Player {
 		ExpectedGoalInvolvements: p.ExpectedGoalInvolvements,
 		PointsPerGame:            p.PointsPerGame,
 		ExpectedPointsNext:       p.ExpectedPointsNext,
+		TransfersInEvent:         int32(p.TransfersInEvent),
+		TransfersOutEvent:        int32(p.TransfersOutEvent),
+		PriceChangeEvent:         pounds(p.CostChangeEvent),
+		NewsAdded:                p.NewsAdded,
 	}
 }
 
@@ -132,6 +135,12 @@ func toGameweekStats(m db.MatchRow) *pb.GameweekStats {
 		ExpectedAssists:          m.ExpectedAssists,
 		ExpectedGoalInvolvements: m.ExpectedGoalInvolvements,
 	}
+}
+
+// pounds converts tenths of £m (how FPL stores money) to £m: 95 -> 9.5.
+// It converts to float before dividing: 95/10 in integer maths is 9, not 9.5.
+func pounds(tenths int) float64 {
+	return float64(tenths) / 10
 }
 
 // int32Ptr converts an optional int. nil stays nil ("not set").

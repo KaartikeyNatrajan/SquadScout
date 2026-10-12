@@ -39,9 +39,15 @@ func ReadFile(t testing.TB, name string) []byte {
 
 // Server is a fake FPL API. It answers:
 //
-//	/bootstrap-static/       with bootstrap-static.json
-//	/fixtures/               with fixtures.json
-//	/element-summary/{id}/   with element-summary-{id}.json, or 404 if there's no such file
+//	/bootstrap-static/              with bootstrap-static.json
+//	/fixtures/                      with fixtures.json
+//	/element-summary/{id}/          with element-summary-{id}.json
+//	/entry/{id}/                    with entry-{id}.json
+//	/entry/{id}/history/            with entry-{id}-history.json
+//	/entry/{id}/transfers/          with entry-{id}-transfers.json
+//	/entry/{id}/event/{gw}/picks/   with entry-{id}-picks-{gw}.json
+//
+// and 404 (like the real API for an unknown id) when there's no such file.
 //
 // It counts requests per path (Hits) and can pretend to be down (SetDown).
 type Server struct {
@@ -86,17 +92,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Map the URL path to a testdata file name.
-	var file string
-	switch {
-	case r.URL.Path == "/bootstrap-static/":
-		file = "bootstrap-static.json"
-	case r.URL.Path == "/fixtures/":
-		file = "fixtures.json"
-	case strings.HasPrefix(r.URL.Path, "/element-summary/"):
-		id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/element-summary/"), "/")
-		file = "element-summary-" + id + ".json"
-	default:
+	file := testdataFile(r.URL.Path)
+	if file == "" {
 		http.NotFound(w, r)
 		return
 	}
@@ -109,4 +106,27 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(data)
+}
+
+// testdataFile maps an API path to the name of the file holding its saved
+// response, or "" for paths the fake doesn't know.
+func testdataFile(path string) string {
+	// "/entry/1/event/5/picks/" -> ["entry", "1", "event", "5", "picks"]
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+
+	switch {
+	case path == "/bootstrap-static/":
+		return "bootstrap-static.json"
+	case path == "/fixtures/":
+		return "fixtures.json"
+	case len(parts) == 2 && parts[0] == "element-summary":
+		return "element-summary-" + parts[1] + ".json"
+	case len(parts) == 2 && parts[0] == "entry":
+		return "entry-" + parts[1] + ".json"
+	case len(parts) == 3 && parts[0] == "entry": // history, transfers
+		return "entry-" + parts[1] + "-" + parts[2] + ".json"
+	case len(parts) == 5 && parts[0] == "entry" && parts[2] == "event" && parts[4] == "picks":
+		return "entry-" + parts[1] + "-picks-" + parts[3] + ".json"
+	}
+	return ""
 }

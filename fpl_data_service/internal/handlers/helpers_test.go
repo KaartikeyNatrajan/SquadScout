@@ -18,12 +18,14 @@ import (
 	"squad_scout/fpl_data_service/internal/db"
 	"squad_scout/fpl_data_service/internal/fpl"
 	"squad_scout/fpl_data_service/internal/fpltest"
+	"squad_scout/fpl_data_service/internal/manager"
 	"squad_scout/fpl_data_service/internal/refresh"
 )
 
 // newTestService returns a service whose cache already holds the saved
 // bootstrap and fixtures, plus the fake API so tests can count requests or
-// take it down. Player histories are downloaded on demand, as in production.
+// take it down. Player histories and managers' teams are downloaded on
+// demand, as in production.
 func newTestService(t *testing.T) (*FplService, *fpltest.Server) {
 	return newTestServiceWithMaxAge(t, time.Hour)
 }
@@ -42,11 +44,12 @@ func newTestServiceWithMaxAge(t *testing.T, maxAge time.Duration) (*FplService, 
 	t.Cleanup(func() { store.Close() })
 
 	api := fpltest.NewServer(t)
-	refresher := refresh.New(store, fpl.NewClient(api.URL), maxAge)
+	client := fpl.NewClient(api.URL)
+	refresher := refresh.New(store, client, maxAge)
 	if err := refresher.All(ctx); err != nil {
 		t.Fatalf("initial refresh: %v", err)
 	}
-	return NewFplService(store, refresher), api
+	return NewFplService(store, refresher, manager.NewLoader(client, store, maxAge)), api
 }
 
 // wantCode fails the test unless err is a gRPC error with the given code.

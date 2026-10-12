@@ -5,6 +5,7 @@
 //	/bootstrap-static/       all players ("elements"), teams, gameweeks ("events")
 //	/fixtures/               every fixture of the season, with difficulty ratings
 //	/element-summary/{id}/   one player's match-by-match history this season
+//	/entry/{id}/...          one manager's team (see entry.go)
 //
 // This package only downloads and decodes JSON. Deciding when to download
 // (internal/refresh) and storing the result (internal/db) live elsewhere.
@@ -13,6 +14,7 @@ package fpl
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -20,6 +22,10 @@ import (
 
 // DefaultBaseURL is the real FPL API. Tests pass the URL of a fake server.
 const DefaultBaseURL = "https://fantasy.premierleague.com/api"
+
+// ErrNotFound is returned (wrapped) when the API answers 404, e.g. for an
+// unknown player or team id. Check for it with errors.Is(err, fpl.ErrNotFound).
+var ErrNotFound = errors.New("not found")
 
 // The FPL API sometimes returns 403 to requests without a browser-like UA.
 const userAgent = "Mozilla/5.0 (compatible; squad-scout/0.1)"
@@ -55,34 +61,39 @@ type Bootstrap struct {
 	Elements []Element `json:"elements"`
 	Teams    []Team    `json:"teams"`
 	Events   []Event   `json:"events"`
+	Chips    []Chip    `json:"chips"`
 }
 
 // Element is FPL's name for a player.
 type Element struct {
-	ID                       int    `json:"id"`
-	WebName                  string `json:"web_name"`
-	FirstName                string `json:"first_name"`
-	SecondName               string `json:"second_name"`
-	Team                     int    `json:"team"`
-	ElementType              int    `json:"element_type"` // 1 GK, 2 DEF, 3 MID, 4 FWD
-	NowCost                  int    `json:"now_cost"`     // tenths of £m
-	TotalPoints              int    `json:"total_points"`
-	Form                     string `json:"form"`                // FPL sends numbers as strings here
-	SelectedByPercent        string `json:"selected_by_percent"` // same
-	Status                   string `json:"status"`              // a, d, i, s, u, n
-	News                     string `json:"news"`                // "" when there is none
-	ChanceOfPlayingNextRound *int   `json:"chance_of_playing_next_round"`
-	Minutes                  int    `json:"minutes"`
-	Starts                   int    `json:"starts"`
-	GoalsScored              int    `json:"goals_scored"`
-	Assists                  int    `json:"assists"`
-	CleanSheets              int    `json:"clean_sheets"`
-	Bonus                    int    `json:"bonus"`
-	ExpectedGoals            string `json:"expected_goals"`
-	ExpectedAssists          string `json:"expected_assists"`
-	ExpectedGoalInvolvements string `json:"expected_goal_involvements"`
-	PointsPerGame            string `json:"points_per_game"`
-	EPNext                   string `json:"ep_next"` // FPL's expected points for the next gameweek
+	ID                       int     `json:"id"`
+	WebName                  string  `json:"web_name"`
+	FirstName                string  `json:"first_name"`
+	SecondName               string  `json:"second_name"`
+	Team                     int     `json:"team"`
+	ElementType              int     `json:"element_type"` // 1 GK, 2 DEF, 3 MID, 4 FWD
+	NowCost                  int     `json:"now_cost"`     // tenths of £m
+	TotalPoints              int     `json:"total_points"`
+	Form                     string  `json:"form"`                // FPL sends numbers as strings here
+	SelectedByPercent        string  `json:"selected_by_percent"` // same
+	Status                   string  `json:"status"`              // a, d, i, s, u, n
+	News                     string  `json:"news"`                // "" when there is none
+	ChanceOfPlayingNextRound *int    `json:"chance_of_playing_next_round"`
+	Minutes                  int     `json:"minutes"`
+	Starts                   int     `json:"starts"`
+	GoalsScored              int     `json:"goals_scored"`
+	Assists                  int     `json:"assists"`
+	CleanSheets              int     `json:"clean_sheets"`
+	Bonus                    int     `json:"bonus"`
+	ExpectedGoals            string  `json:"expected_goals"`
+	ExpectedAssists          string  `json:"expected_assists"`
+	ExpectedGoalInvolvements string  `json:"expected_goal_involvements"`
+	PointsPerGame            string  `json:"points_per_game"`
+	EPNext                   string  `json:"ep_next"`             // FPL's expected points for the next gameweek
+	TransfersInEvent         int     `json:"transfers_in_event"`  // since the last deadline
+	TransfersOutEvent        int     `json:"transfers_out_event"` // same
+	CostChangeEvent          int     `json:"cost_change_event"`   // tenths of £m since the last deadline
+	NewsAdded                *string `json:"news_added"`          // RFC 3339; null if no news
 }
 
 // Team is one Premier League club.
@@ -100,6 +111,16 @@ type Event struct {
 	IsCurrent  bool   `json:"is_current"`
 	IsNext     bool   `json:"is_next"`
 	IsFinished bool   `json:"finished"`
+}
+
+// Chip is one chip allowance: each manager may play the chip once between
+// StartEvent and StopEvent. FPL gives two of each chip per season, one per
+// half, so each name appears twice.
+type Chip struct {
+	ID         int    `json:"id"`
+	Name       string `json:"name"` // "wildcard", "freehit", "bboost", "3xc"
+	StartEvent int    `json:"start_event"`
+	StopEvent  int    `json:"stop_event"`
 }
 
 // Fixture is one match from /fixtures/. "h" is the home team, "a" the away team.
@@ -194,6 +215,10 @@ func (c *Client) getJSON(ctx context.Context, path string, dst any) error {
 	}
 	defer resp.Body.Close() // always close the body, or the connection leaks
 
+	if resp.StatusCode == http.StatusNotFound {
+		// %w wraps ErrNotFound, so callers can detect it with errors.Is.
+		return fmt.Errorf("GET %s: %w", path, ErrNotFound)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("GET %s: unexpected status %d", path, resp.StatusCode)
 	}

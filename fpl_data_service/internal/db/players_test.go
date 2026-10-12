@@ -84,3 +84,115 @@ func TestTeamExists(t *testing.T) {
 		}
 	}
 }
+
+func TestPlayersByID(t *testing.T) {
+	store := seededStore(t)
+
+	got, err := store.PlayersByID(context.Background(), []int{12, 10, 99999})
+	if err != nil {
+		t.Fatalf("PlayersByID: %v", err)
+	}
+	// The unknown id is simply missing.
+	if len(got) != 2 || got[12].WebName != "Saka" || got[10].WebName != "White" {
+		t.Errorf("want Saka and White, got %v", got)
+	}
+
+	empty, err := store.PlayersByID(context.Background(), nil)
+	if err != nil || len(empty) != 0 {
+		t.Errorf("no ids: want an empty map, got %v (err=%v)", empty, err)
+	}
+}
+
+func TestFindPlayers(t *testing.T) {
+	ctx := context.Background()
+	store := seededStore(t)
+
+	// The best midfielders at £8.0m or less by expected points.
+	got, err := store.FindPlayers(ctx, PlayerFilter{Position: 3, MaxCost: 80, Sort: SortExpectedPoints, Limit: 10})
+	if err != nil {
+		t.Fatalf("FindPlayers: %v", err)
+	}
+	if len(got) != 10 {
+		t.Fatalf("want 10 players, got %d", len(got))
+	}
+	for i, p := range got {
+		if p.Position != 3 || p.NowCost > 80 {
+			t.Errorf("%s: position %d, cost %d breaks the filter", p.WebName, p.Position, p.NowCost)
+		}
+		if p.Status != "a" && p.Status != "d" {
+			t.Errorf("%s has status %q; unavailable players should be left out", p.WebName, p.Status)
+		}
+		if i > 0 && p.ExpectedPointsNext > got[i-1].ExpectedPointsNext {
+			t.Errorf("not sorted by expected points: %v after %v", p.ExpectedPointsNext, got[i-1].ExpectedPointsNext)
+		}
+	}
+}
+
+func TestFindPlayers_ExcludeAndInclude(t *testing.T) {
+	ctx := context.Background()
+	store := seededStore(t)
+
+	// The best player by total points, then the same search without him.
+	best, err := store.FindPlayers(ctx, PlayerFilter{Sort: SortTotalPoints, Limit: 1})
+	if err != nil || len(best) != 1 {
+		t.Fatalf("best player: %v (err=%v)", best, err)
+	}
+	next, err := store.FindPlayers(ctx, PlayerFilter{Sort: SortTotalPoints, Limit: 1, ExcludeIDs: []int{best[0].ID}})
+	if err != nil || len(next) != 1 || next[0].ID == best[0].ID {
+		t.Errorf("excluding %s should return someone else, got %v (err=%v)", best[0].WebName, next, err)
+	}
+
+	// Saliba (id 6) is injured: hidden by default, found when asked for.
+	hidden, err := store.FindPlayers(ctx, PlayerFilter{Position: 2, Sort: SortTotalPoints, Limit: 1000})
+	if err != nil {
+		t.Fatalf("FindPlayers: %v", err)
+	}
+	all, err := store.FindPlayers(ctx, PlayerFilter{Position: 2, Sort: SortTotalPoints, Limit: 1000, IncludeUnavailable: true})
+	if err != nil {
+		t.Fatalf("FindPlayers: %v", err)
+	}
+	if containsPlayer(hidden, 6) || !containsPlayer(all, 6) {
+		t.Errorf("Saliba: want hidden by default and included on request")
+	}
+}
+
+func TestTopTransfers(t *testing.T) {
+	ctx := context.Background()
+	store := seededStore(t)
+
+	in, err := store.TopTransfers(ctx, true, 3)
+	if err != nil || len(in) != 3 {
+		t.Fatalf("TopTransfers(in): %v (err=%v)", in, err)
+	}
+	// From the saved data: Groß was the most transferred in.
+	if in[0].WebName != "Groß" || in[0].TransfersInEvent != 763845 {
+		t.Errorf("want Groß first with 763845 in, got %s with %d", in[0].WebName, in[0].TransfersInEvent)
+	}
+
+	out, err := store.TopTransfers(ctx, false, 3)
+	if err != nil || len(out) != 3 {
+		t.Fatalf("TopTransfers(out): %v (err=%v)", out, err)
+	}
+	if out[0].TransfersOutEvent < out[1].TransfersOutEvent {
+		t.Errorf("transfers out not sorted: %d before %d", out[0].TransfersOutEvent, out[1].TransfersOutEvent)
+	}
+}
+
+func TestTeams(t *testing.T) {
+	teams, err := seededStore(t).Teams(context.Background())
+	if err != nil || len(teams) != 20 {
+		t.Fatalf("want 20 teams, got %d (err=%v)", len(teams), err)
+	}
+	if teams[0].Name != "Arsenal" || teams[0].ShortName != "ARS" {
+		t.Errorf("team 1: want Arsenal (ARS), got %+v", teams[0])
+	}
+}
+
+func containsPlayer(players []PlayerRow, id int) bool {
+	for _, p := range players {
+		if p.ID == id {
+			return true
+		}
+	}
+	return false
+}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -123,4 +124,52 @@ func TestGetPlayerFixtures_LimitIsCapped(t *testing.T) {
 	if got := len(resp.GetFixtures()); got != maxFixtures {
 		t.Errorf("want %d fixtures (the cap), got %d", maxFixtures, got)
 	}
+}
+
+func TestGetFixtures_ByTeamName(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	// Each name, and the home or away team its first fixture must include.
+	cases := []struct {
+		name string
+		want string
+	}{
+		{"Arsenal", "Arsenal"},
+		{"arsenal", "Arsenal"},           // case doesn't matter
+		{"ARS", "Arsenal"},               // short name
+		{"Villa", "Aston Villa"},         // part of the name
+		{"Manchester United", "Man Utd"}, // an alias
+		{"Tottenham Hotspur", "Spurs"},
+		{"Brighton & Hove Albion", "Brighton"}, // the name contains FPL's
+	}
+	for _, tc := range cases {
+		resp, err := svc.GetFixtures(ctx, &pb.GetFixturesRequest{TeamName: tc.name, NextN: 1})
+		if err != nil {
+			t.Errorf("%q: %v", tc.name, err)
+			continue
+		}
+		f := resp.GetFixtures()
+		if len(f) != 1 || (f[0].GetHomeTeamName() != tc.want && f[0].GetAwayTeamName() != tc.want) {
+			t.Errorf("%q: want a %s fixture, got %v", tc.name, tc.want, f)
+		}
+	}
+}
+
+func TestGetFixtures_BadTeamName(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newTestService(t)
+
+	// "Man" could be either Manchester club: NotFound, listing both.
+	_, err := svc.GetFixtures(ctx, &pb.GetFixturesRequest{TeamName: "Man"})
+	wantCode(t, err, codes.NotFound)
+	if err != nil && !strings.Contains(err.Error(), "Man City, Man Utd") {
+		t.Errorf("want both Manchester clubs listed, got %v", err)
+	}
+
+	_, err = svc.GetFixtures(ctx, &pb.GetFixturesRequest{TeamName: "Barcelona"})
+	wantCode(t, err, codes.NotFound)
+
+	_, err = svc.GetFixtures(ctx, &pb.GetFixturesRequest{})
+	wantCode(t, err, codes.InvalidArgument)
 }

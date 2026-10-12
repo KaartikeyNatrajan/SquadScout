@@ -8,7 +8,8 @@
 -- That is safe because everything here can be downloaded again.
 --
 -- Where each table's data comes from (see internal/refresh):
---   teams, events, players  <- /bootstrap-static/        (refreshed hourly)
+--   teams, events, players,
+--   chips                   <- /bootstrap-static/        (refreshed hourly)
 --   fixtures                <- /fixtures/                (refreshed hourly)
 --   player_match_stats      <- /element-summary/{id}/    (per player, on demand)
 --   sync_log                <- written by every refresh above
@@ -27,6 +28,15 @@ CREATE TABLE IF NOT EXISTS events (
     finished       INTEGER NOT NULL,     -- SQLite has no BOOLEAN: 0 or 1
     is_current     INTEGER NOT NULL,
     is_next        INTEGER NOT NULL
+);
+
+-- Chip allowances: each manager may play each row's chip once between
+-- start_event and stop_event. Two rows per chip name, one per half-season.
+CREATE TABLE IF NOT EXISTS chips (
+    id           INTEGER PRIMARY KEY,
+    name         TEXT NOT NULL,     -- "wildcard", "freehit", "bboost", "3xc"
+    start_event  INTEGER NOT NULL,
+    stop_event   INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS players (
@@ -55,6 +65,10 @@ CREATE TABLE IF NOT EXISTS players (
     expected_goal_involvements    REAL NOT NULL DEFAULT 0,
     points_per_game               REAL NOT NULL DEFAULT 0,
     ep_next                       REAL NOT NULL DEFAULT 0,  -- FPL's expected points, next gameweek
+    news_added                    TEXT,                     -- when news was updated; NULL if no news
+    transfers_in_event            INTEGER NOT NULL DEFAULT 0,  -- by all managers since the last deadline
+    transfers_out_event           INTEGER NOT NULL DEFAULT 0,
+    cost_change_event             INTEGER NOT NULL DEFAULT 0,  -- tenths of £m since the last deadline
     updated_at                    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

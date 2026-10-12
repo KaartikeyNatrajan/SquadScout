@@ -1,7 +1,8 @@
 # Squad Scout: how the code works
 
-A beginner-friendly walkthrough of the codebase, written 2026-09-27. Things
-change; if this disagrees with the code, the code wins.
+A beginner-friendly walkthrough of the codebase, written 2026-09-27 and
+updated 2026-10-10 (data service). Things change; if this disagrees with the
+code, the code wins. For diagrams, see [architecture.md](architecture.md).
 
 ## 1. The big picture
 
@@ -78,9 +79,10 @@ Take `make chat Q="How has Saka been playing?"`:
 6. **The tools node** runs the Python `search_players` function
    ([tools.py](../langgraph_service/src/agent/tools.py)). That function makes a
    **gRPC call** to the Go service.
-7. **Go** ([fpl_service.go](../fpl_data_service/internal/handlers/fpl_service.go))
-   receives `SearchPlayers(name="saka")` and returns a Player. *Right now this is
-   a hardcoded fake Saka* (87 pts, form 6.2, £10.1m).
+7. **Go** ([players.go](../fpl_data_service/internal/handlers/players.go))
+   receives `SearchPlayers(name="saka")`, looks the name up in its SQLite copy
+   of the FPL data, and returns the matching players: price, points, form,
+   availability, news, expected points and more.
 8. **Back in Python**, the result is converted to JSON text and added to the
    message list as a "tool message".
 9. **Back to `agent`**: the model now sees the question *and* the data, and
@@ -103,7 +105,7 @@ carries it out.
 squad_scout/
 ├── Makefile                 shortcuts for every command
 ├── CLAUDE.md, README.md     docs
-├── docs/                    this walkthrough
+├── docs/                    this walkthrough + architecture diagrams
 ├── proto/                   the contract between Python and Go
 ├── fpl_data_service/        Go: the data service
 ├── langgraph_service/       Python: the agent + web API
@@ -118,8 +120,8 @@ squad_scout/
 for what Python can ask Go.
 
 - `service FplDataService { rpc SearchPlayers(...) returns (...) }` declares a
-  **remote function**. There are three: `SearchPlayers`, `GetFixtures` and
-  `GetPlayerGameweekStats`.
+  **remote function**. There are ten (listed in the README), from
+  `SearchPlayers` to `EvaluateTransfers`.
 - `message Player { ... }` declares a **data shape**, like a class that only has
   fields.
 - The `= 1`, `= 2` after each field **are not default values**. They're field IDs
@@ -140,33 +142,61 @@ are regenerated to match, and they can't drift apart.
 
 ### `fpl_data_service/`: the Go data service
 
+This is the "librarian". It downloads data from the FPL website, keeps a copy in
+SQLite, and answers questions about it. It also knows FPL's squad rules, so it
+can check whether a set of transfers is allowed.
+
 ```
 fpl_data_service/
-├── cmd/api/main.go                    program entry point: starts the server
-├── internal/handlers/fpl_service.go   the actual gRPC functions
-├── internal/db/db.go + schema.sql     SQLite database setup
-├── internal/fpl/client.go             talks to the real FPL website
-├── gen/                               generated from proto (don't edit)
-├── data/fpl.db                        the SQLite file (created on start)
-└── go.mod / go.sum                    dependency list (like requirements.txt)
+├── cmd/api/main.go          program entry point: wiring, refresh timer, shutdown
+├── internal/
+│   ├── handlers/            the 10 gRPC functions ("routes"), one file per topic
+│   ├── refresh/             "is this data stale? then download and save it"
+│   ├── manager/             a manager's team: free transfers, chips, selling prices
+│   ├── squad/               the verifier: FPL's squad rules
+│   ├── optimizer/           transfer search: structure only, not written yet
+│   ├── db/                  SQLite: tables, saving, queries
+│   ├── fpl/                 HTTP client for the FPL website (+ testdata/)
+│   ├── fpltest/             a fake FPL website for tests
+│   └── names/               "Ødegaard" -> "odegaard"
+├── gen/                     generated from proto (don't edit)
+├── data/fpl.db              the SQLite file (created on start)
+└── go.mod / go.sum          dependency list (like requirements.txt)
 ```
 
 (Go convention: `cmd/` holds programs you can run; `internal/` holds packages
 only this project can import.)
 
+The packages form layers, and each layer only calls the ones below it:
+
+```
+handlers                                        talks gRPC; validates, converts
+   │
+refresh   manager   squad   optimizer   names   the logic
+   │         │
+  db        fpl                                 storage and downloading
+```
+
+[architecture.md](architecture.md) has this as a proper diagram, plus diagrams
+of each request.
+
 **[main.go](../fpl_data_service/cmd/api/main.go)**: startup, in order:
 
 1. Read settings from environment variables (`GRPC_ADDR`, default `:50051`;
-   `DB_PATH`, default `data/fpl.db`).
+   `DB_PATH`, default `data/fpl.db`; `FPL_BASE_URL`, default the real website).
 2. Set up Ctrl+C handling via a **context**. A context is Go's standard "cancel
    signal", passed through the program.
 3. `db.Open(...)`: create or open the SQLite file and create the tables.
-4. `fpl.NewClient()`: make the FPL website client (not used yet).
-5. `grpc.NewServer()` + `RegisterFplDataServiceServer(...)`: "when a
-   SearchPlayers call arrives, run *our* `FplService.SearchPlayers`".
-6. It also registers a **health check** (so others can ask "are you alive?") and
+4. Build the FPL client, the **refresher** (keeps the cache fresh) and the
+   **manager loader** (fetches managers' teams).
+5. `refreshAll()`: download players, teams and fixtures if the saved copy is
+   more than an hour old.
+6. `grpc.NewServer()` + `RegisterFplDataServiceServer(...)`: "when a request
+   arrives, run *our* method for it". Also a **health check** and
    **reflection** (so `grpcurl` can list the functions without the proto file).
-7. Listen on port 50051 and serve until Ctrl+C, then shut down cleanly.
+7. A background goroutine re-runs `refreshAll()` every 10 minutes (every
+   minute after a failure).
+8. Listen on port 50051 and serve until Ctrl+C, then shut down cleanly.
 
 Go patterns you'll see everywhere:
 
@@ -176,47 +206,63 @@ Go patterns you'll see everywhere:
   `finally`.
 - `go func() {...}()` runs a function in the background (a "goroutine").
 
-**[fpl_service.go](../fpl_data_service/internal/handlers/fpl_service.go)**: the
-real "routes". With gRPC, each RPC in the proto is a method on the `FplService`
-struct:
+**`handlers/`**: the "routes". With gRPC, each RPC in the proto is a method on
+the `FplService` struct, and every method has the same shape: **check the
+request → get the data → convert it to protobuf**.
 
-- `SearchPlayers`: rejects an empty name (`InvalidArgument` error), then
-  **returns the hardcoded Saka** whatever name you pass. The TODO is to query
-  SQLite instead.
-- `GetFixtures` and `GetPlayerGameweekStats`: check their inputs, then return an
-  `Unimplemented` error.
-- `pb.UnimplementedFplDataServiceServer` embedded at the top supplies a default
-  "Unimplemented" version of every RPC, so adding a new RPC to the proto doesn't
-  break the build.
+- `players.go`: `SearchPlayers` (by name) and `FindPlayers` (by position, price
+  and so on).
+- `fixtures.go`: `GetFixtures` (accepts a team name too) and
+  `GetPlayerFixtures`.
+- `stats.go`: `GetPlayerRecentForm` and `GetPlayerGameweekStats`.
+- `manager.go`: `GetManagerTeam`.
+- `transfers.go`: `GetTransferTrends`, `EvaluateTransfers`, `SuggestTransfers`.
+- `convert.go`: turns database rows into protobuf messages, including £m
+  conversions (FPL stores 95 for £9.5m).
+- `service.go`: the struct and helpers shared by all of them, including how
+  failures become gRPC error codes (`NotFound`, `Unavailable`, …).
 
-**[db.go](../fpl_data_service/internal/db/db.go) +
-[schema.sql](../fpl_data_service/internal/db/schema.sql)**: the database.
+**`refresh/`**: one rule, used for every download: *if `sync_log` says this
+dataset was saved less than an hour ago, skip; otherwise download and save it*.
+Players and fixtures are refreshed on the timer; a player's match history is
+downloaded the first time someone asks about him.
 
-- `//go:embed schema.sql` bakes the SQL file *into the compiled program*, so the
-  schema can never go missing.
-- On every start it runs `CREATE TABLE IF NOT EXISTS ...`, which is safe to
-  repeat ("idempotent").
-- Tables: `teams`, `players` (with `search_name`: lowercased, accents removed),
-  `fixtures`, `player_gameweek_stats`, and `sync_log` (records when data was last
-  downloaded).
-- **Currently nothing reads or writes these tables.** They're scaffolding for
-  the next task.
-- The connection options: WAL mode lets reads carry on during writes, foreign
-  keys are enforced, and it waits up to 5 s if the database is busy.
+**`db/`**: the database, one file per kind of data (`players.go`,
+`fixtures.go`, `history.go`, …).
 
-**[client.go](../fpl_data_service/internal/fpl/client.go)**: an HTTP client for
-`fantasy.premierleague.com/api`.
+- `schema.sql` is baked into the program (`//go:embed`) and run on every start.
+  It's safe to repeat because every statement says `IF NOT EXISTS`.
+- `db.go` has a **schema version**. Change `schema.sql` → bump the version → on
+  the next start the old tables are dropped and rebuilt. That's fine because
+  it's only a cache.
+- Saving uses **transactions** (all of it saves, or none of it) and **upserts**
+  (insert, or update if the row exists).
+- Queries return plain Go structs (`PlayerRow`, `FixtureRow`, …), never
+  protobuf, so this package doesn't depend on gRPC.
 
-- Go structs (`Element` = player, `Event` = gameweek, `Team`) with `json:"..."`
-  tags that map JSON keys to fields.
-- `FetchBootstrap()` downloads the big "everything" file. **It isn't called
-  anywhere yet.**
-- It sends a browser-like User-Agent header because the FPL API sometimes blocks
-  requests that don't have one.
+**`fpl/`**: downloads and decodes JSON from the FPL website. Go structs with
+`json:"..."` tags say which JSON key fills which field. `entry.go` covers the
+manager endpoints. The `testdata/` folder holds saved real responses for tests.
 
-**[fpl_service_test.go](../fpl_data_service/internal/handlers/fpl_service_test.go)**:
-two tests: an empty name gives an error, and "saka" returns a player. They call
-the methods directly, with no network involved.
+**`manager/`**: loads a manager's team. FPL doesn't publish everything we need,
+so `rules.go` works out the rest: how many **free transfers** the team probably
+has, which **chips** are left, and what each player would **sell for** (FPL
+keeps half of any price rise). It also handles the Free Hit case: after a Free
+Hit the squad goes back to the previous week's, so that's the one shown.
+
+**`squad/`**: the **verifier**. Given a squad and some transfers, it builds the
+new squad and lists every rule it breaks: 15 players, 2/5/5/3 by position, at
+most 3 per club, within budget. It only does arithmetic on what it's given (no
+database, no network), which makes it easy to test and fast.
+
+**`optimizer/`**: will search for the best transfers by trying combinations and
+checking each with the verifier. For now it has the types and a written-up
+design; the RPC replies "not implemented".
+
+**Tests**: `make test` runs about 100 Go tests without the internet.
+`fpltest/` is a fake FPL website that serves the saved files from
+`fpl/testdata/`; the real code is pointed at it. Each test gets a fresh
+temporary database.
 
 ### `langgraph_service/`: the Python agent
 
@@ -337,15 +383,14 @@ file-change events don't work on `/mnt/d`.
 
 ---
 
-## 4. What's real and what's placeholder (as of 2026-09-27)
+## 4. What's real and what's placeholder (as of 2026-10-10)
 
 | Part | Status |
 |---|---|
 | Model server, tool calling | ✅ Works |
 | Python → Go over gRPC | ✅ Works |
-| Agent loop + nudge | ✅ Runs, but the nudge doesn't fix the Saka answer yet: the model repeats "Let me check his availability" even after being nudged (it doesn't know `status: "a"` means available), and `/chat/stream` shows both drafts |
-| `SearchPlayers` | ⚠️ Always returns the same fake Saka |
-| `GetFixtures`, `GetPlayerGameweekStats` | ❌ Return "Unimplemented" |
-| SQLite tables | ⚠️ Created but empty |
-| FPL website client | ⚠️ Written but never called |
+| Data service: players, fixtures, form, trends, managers' teams, transfer checks | ✅ Real FPL data, cached in SQLite, refreshed hourly |
+| Transfer optimizer (`SuggestTransfers`) | ⚠️ Structure and wiring only; replies "not implemented" |
+| Agent tools | ⚠️ Only `search_players` and `get_fixtures`; the other RPCs have no tools yet |
+| Agent loop + nudge | ⚠️ Runs, but the model sometimes still ends with "Let me check…", and `/chat/stream` shows both drafts when the nudge fires |
 | docker-compose | ❌ All commented out |
