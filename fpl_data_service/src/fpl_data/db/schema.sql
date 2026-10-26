@@ -181,6 +181,41 @@ CREATE TABLE IF NOT EXISTS transfer_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_transfer_snapshots_taken_at ON transfer_snapshots (taken_at);
 
+-- News stories from outside FPL (RSS feeds; see news/). `snippet` is the text the
+-- language model will be shown, built when the story is saved so a request only
+-- reads it. Stories older than 3 days are deleted on every refresh.
+CREATE TABLE IF NOT EXISTS news_items (
+    id            INTEGER PRIMARY KEY,
+    dedupe_key    TEXT NOT NULL UNIQUE,  -- the normalised headline: one story from two feeds is stored once
+    title         TEXT NOT NULL,
+    snippet       TEXT NOT NULL,
+    source        TEXT NOT NULL,         -- the outlet, e.g. "BBC Sport"
+    url           TEXT NOT NULL,
+    published_at  TEXT NOT NULL,         -- RFC 3339, UTC
+    fetched_at    TEXT NOT NULL,
+    topics        TEXT NOT NULL          -- comma-separated, see news/topics.py
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_items_published_at ON news_items (published_at);
+
+-- Which players and clubs a story mentions. No REFERENCES to players or teams:
+-- those tables are rewritten by the bootstrap refresh.
+CREATE TABLE IF NOT EXISTS news_players (
+    news_id    INTEGER NOT NULL REFERENCES news_items (id),
+    player_id  INTEGER NOT NULL,
+    PRIMARY KEY (news_id, player_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_players_player ON news_players (player_id);
+
+CREATE TABLE IF NOT EXISTS news_teams (
+    news_id  INTEGER NOT NULL REFERENCES news_items (id),
+    team_id  INTEGER NOT NULL,
+    PRIMARY KEY (news_id, team_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_news_teams_team ON news_teams (team_id);
+
 -- Tracks when each dataset was last pulled from the FPL API (cache freshness).
 -- dataset is "bootstrap", "fixtures" or "event-live/<gameweek>".
 CREATE TABLE IF NOT EXISTS sync_log (

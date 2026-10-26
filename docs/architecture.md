@@ -134,7 +134,7 @@ What lives where:
 | Module / package | Files | Responsibility |
 |---|---|---|
 | `main.py`, `server.py` | | `main.py` opens the database, builds the refresher and manager loader, starts the gRPC server, runs the refresh timer, shuts down cleanly. `server.py` is the thin gRPC adapter: CamelCase RPC names → `FplService` methods, `ServiceError` → gRPC status, plus health check and reflection |
-| `handlers/` | `service.py` (start here), `base.py` shared helpers, `players.py`, `fixtures.py`, `stats.py`, `manager_team.py`, `transfers.py`, `projector.py` (gathers a player's data for the projection), `fixture_cache.py`, `convert.py`, `errors.py` | The 10 RPCs. Plain async methods: validate input, call the layers below, convert rows to protobuf, raise `ServiceError` with a gRPC code |
+| `handlers/` | `service.py` (start here), `base.py` shared helpers, `players.py`, `fixtures.py`, `stats.py`, `manager_team.py`, `transfers.py`, `news.py`, `projector.py` (gathers a player's data for the projection), `fixture_cache.py`, `convert.py`, `errors.py` | The 12 RPCs. Plain async methods: validate input, call the layers below, convert rows to protobuf, raise `ServiceError` with a gRPC code |
 | `refresh.py` | | Background downloads of bootstrap, fixtures and gameweek stats, with one freshness rule (`_if_stale`) |
 | `manager/` | `loader.py` downloading + saving, `rules.py` pure FPL rules | A manager's team: Free Hit revert, free-transfer count, chips left, selling prices (from price history); saved in SQLite until the next deadline |
 | `squad.py` | | The verifier: FPL squad rules, applying transfers, hit cost. Pure functions |
@@ -617,7 +617,7 @@ flowchart LR
     q7 --> gf
 ```
 
-All 10 RPCs:
+All 12 RPCs:
 
 | RPC | Answers | Data from |
 |---|---|---|
@@ -665,7 +665,7 @@ flowchart LR
     td --> fake --> client --> real --> tmp
 ```
 
-- `make test` runs 297 data-service tests and the 2 agent tests, with no network,
+- `make test` runs 346 data-service tests and the 2 agent tests, with no network,
   GPU or servers needed.
 - The saved data was chosen to cover tricky cases: team 1 played a **Free Hit**
   the week before; team 6 has **3 Arsenal and 3 Chelsea players** (so buying
@@ -679,6 +679,43 @@ flowchart LR
   `tests/testdata/`. The expected values in the tests will change with it.
 
 ---
+
+## 10b. News from outside FPL
+
+FPL's own `news` field is short and slow. The data service therefore also reads
+press coverage once an hour and keeps it for three days. The design rule is
+**code retrieves, the model interprets**: code finds stories, tags what they are
+*about* and keeps the exact wording; it never decides what a story *means*.
+
+```mermaid
+flowchart LR
+    subgraph feeds["Feeds (hourly, own loop in main.py)"]
+        P["BBC, Guardian, Sky RSS"]
+        G["Google News RSS<br/>2 searches per club"]
+    end
+    feeds -->|"client.py: 3 at a time,<br/>one failing feed is only logged"| R["rss.py<br/>parse, skip undated"]
+    R --> PL["pipeline.py<br/>topics.py + matching.py<br/>drop women's, betting, no-topic stories"]
+    PL -->|"snippet built here (text.py)"| DB[("news_items<br/>news_players<br/>news_teams")]
+    DB -->|"older than 3 days: deleted"| DB
+    DB --> H["handlers/news.py<br/>selection.py: newest first,<br/>near-duplicates removed"]
+    H --> RPC["GetPlayerNews / GetTeamNews<br/>+ FPL's own news beside it"]
+```
+
+- **Matching** (`news/matching.py`): full names always match; a distinctive surname
+  matches alone; a surname shared by several players, or an everyday word, needs team
+  context (the club's search feed, or the club named in the story); one-word names must
+  be capitalised ("problems mount" is not Mason Mount). Longest names are found first and
+  removed from the text, so "James Maddison" is not also "James".
+- **Topics** (`news/topics.py`): `injury`, `fitness`, `return`, `suspension`, `rest`,
+  `team_news`, `press_conference`. A story with none, or about no player or club, is dropped.
+- **Snippet**: the headline, plus (for publisher feeds, which have a summary) the
+  summary sentence that mentions the most relevant words; at most 200 characters.
+  Google News gives only a headline.
+- **Measuring**: `tests/news_eval.py` scores the pipeline on hand-labeled real
+  headlines. Numbers on the 60 not tuned on: stories kept 89% precision / 93% recall;
+  players right in every kept story. Known misses are listed by running the script.
+- **Later**: an optional LLM step could fill nullable fields (status, expected return,
+  certainty) when a stronger model is available; nothing in the schema blocks it.
 
 ## 11. Porting notes: Go to Python
 

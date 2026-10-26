@@ -46,6 +46,16 @@ service FplDataService {
   // The most transferred in (or out) players for the next gameweek.
   rpc GetTransferTrends(GetTransferTrendsRequest) returns (GetTransferTrendsResponse);
 
+  // ----- News from outside FPL -----
+
+  // Recent press stories about a player (injury, fitness, rest, suspension,
+  // team news, press conferences), newest first, plus FPL's own `news` for him.
+  // Stories are quoted as published: the caller decides what they mean.
+  rpc GetPlayerNews(GetPlayerNewsRequest) returns (GetPlayerNewsResponse);
+
+  // Recent press stories about a club, newest first.
+  rpc GetTeamNews(GetTeamNewsRequest) returns (GetTeamNewsResponse);
+
   // ----- A manager's team -----
 
   // A manager's squad with each player's availability, expected points and
@@ -358,6 +368,55 @@ message GetTransferTrendsRequest {
 message GetTransferTrendsResponse {
   int32 gameweek = 1;  // the gameweek these transfers are being made for
   repeated PlayerOutlook players = 2;  // most transferred first
+}
+
+// ---------- News ----------
+
+message NewsItem {
+  string title = 1;
+  // What to read: the headline, plus the most relevant sentence of the story's
+  // summary when the feed has one. At most ~200 characters.
+  string snippet = 2;
+  string source = 3;        // the outlet, e.g. "BBC Sport"
+  string published_at = 4;  // RFC 3339, UTC
+  string age = 5;           // e.g. "3 hours ago"
+  string url = 6;
+  // What the story is about: injury, fitness, return, suspension, rest,
+  // team_news, press_conference. A topic is not a verdict: "injury" means injury
+  // is discussed, not that this player is injured.
+  repeated string topics = 7;
+  // Other players named in the same story. A headline naming several players may
+  // be about only one of them; check the wording.
+  repeated string also_mentions = 8;
+}
+
+message GetPlayerNewsRequest {
+  int32 player_id = 1;
+  int32 limit = 2;  // 0 = server default (3); at most 10
+  int32 hours = 3;  // only stories this recent; 0 or more than 72 = 72
+}
+
+message GetPlayerNewsResponse {
+  Player player = 1;
+  string fpl_news = 2;  // FPL's own news for him ("Knee injury - 75% chance of playing"); "" if none
+  string fpl_news_added = 3;  // when FPL added it (RFC 3339); "" if none
+  repeated NewsItem items = 4;
+  // Plain words about coverage, e.g. "no press stories in the last 72 hours".
+  string note = 5;
+}
+
+message GetTeamNewsRequest {
+  int32 team_id = 1;
+  string team_name = 2;  // used when team_id is 0; "Man City", "Spurs", "ARS"
+  int32 limit = 3;  // 0 = server default (5); at most 10
+  int32 hours = 4;  // 0 or more than 72 = 72
+}
+
+message GetTeamNewsResponse {
+  int32 team_id = 1;
+  string team_name = 2;
+  repeated NewsItem items = 3;
+  string note = 4;
 }
 
 // ---------- A manager's team ----------

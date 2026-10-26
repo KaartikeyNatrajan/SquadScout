@@ -1,0 +1,580 @@
+[
+ {
+  "id": 0,
+  "title": "Manchester United booed off pitch after calamitous defeat",
+  "description": "",
+  "source": "ABC News & Headlines – Australian Broadcasting Corporation",
+  "feed_team_id": 16,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 1,
+  "title": "Liverpool vs Brighton – Match preview and team news",
+  "description": "",
+  "source": "Yahoo Sports",
+  "feed_team_id": 14,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 2,
+  "title": "Every word Mikel Arteta said on fresh Arsenal injury worry, yellow card rant and Everton win",
+  "description": "",
+  "source": "Football London",
+  "feed_team_id": 1,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 3,
+  "title": "'No' - Andoni Iraola confirms another Liverpool injury blow ahead of Brighton",
+  "description": "",
+  "source": "SussexWorld",
+  "feed_team_id": 14,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 4,
+  "title": "3 winners and 2 losers as Arsenal defenders come out on top against Everton",
+  "description": "",
+  "source": "LiveScore",
+  "feed_team_id": 1,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 5,
+  "title": "Report: Everton hold early talks over January move for Marcus Rashford",
+  "description": "",
+  "source": "Read Everton",
+  "feed_team_id": 9,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 6,
+  "title": "Phelan: We Will Be Ready To Bounce Back",
+  "description": "",
+  "source": "Everton FC",
+  "feed_team_id": 9,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 7,
+  "title": "Premier League 2 report: Cobham Next Gen 2-2 Liverpool | News | Official Site",
+  "description": "",
+  "source": "Chelsea Football Club",
+  "feed_team_id": 14,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 8,
+  "title": "Live Commentary - Chelsea vs Spurs | 24.10.2026",
+  "description": "",
+  "source": "Sky Sports",
+  "feed_team_id": 6,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 9,
+  "title": "How To Watch Man Utd vs Bournemouth: Kick-Off Time, TV Channel, Injury Latest",
+  "description": "",
+  "source": "roundtable.io",
+  "feed_team_id": 16,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 10,
+  "title": "Arsenal 2-0 Everton: Mikel Arteta said",
+  "description": "",
+  "source": "BBC",
+  "feed_team_id": 9,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 11,
+  "title": "Chelsea vs Tottenham Hotspur Preview, prediction, injury news & lineups | Premier League 2026-27",
+  "description": "",
+  "source": "Khel Now",
+  "feed_team_id": 19,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 12,
+  "title": "National media point out Everton 'concerns' after Arsenal loss with one positive named",
+  "description": "",
+  "source": "Liverpool Echo",
+  "feed_team_id": 9,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 13,
+  "title": "!+[𝐒𝐓ream]HERE'S*! Crystal Palace vs Newcastle United Football 𝐋𝐈𝐕𝐄 𝐒𝐭𝐫𝐞𝐚𝐦 Ｔｖ Channel",
+  "description": "",
+  "source": "FC東京オフィシャルホームページ",
+  "feed_team_id": 17,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 14,
+  "title": "Met Office issues weather alert as Storm Boelo could put Liverpool v Brighton fixture in doubt",
+  "description": "",
+  "source": "The Empire of The Kop",
+  "feed_team_id": 14,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 15,
+  "title": "Arsenal vs Everton: Arteta's side go level at top of table through defensive duo - as it happened",
+  "description": "",
+  "source": "ESPN",
+  "feed_team_id": 1,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 16,
+  "title": "Man Utd Injury News vs Bournemouth: Mainoo Out, Rashford, Martinez Doubts",
+  "description": "",
+  "source": "The False 9",
+  "feed_team_id": 16,
+  "keep": true,
+  "players": [
+   432,
+   429,
+   419
+  ]
+ },
+ {
+  "id": 17,
+  "title": "What have Man Utd changed to turn around WSL form?",
+  "description": "",
+  "source": "BBC",
+  "feed_team_id": 16,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 18,
+  "title": "Chelsea XI vs Tottenham: Predicted lineup and confirmed team news",
+  "description": "",
+  "source": "London Evening Standard",
+  "feed_team_id": 6,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 19,
+  "title": "Chelsea hit with huge injury blow as Joao Pedro misses Tottenham clash",
+  "description": "",
+  "source": "AOL.com",
+  "feed_team_id": 6,
+  "keep": true,
+  "players": [
+   165
+  ]
+ },
+ {
+  "id": 20,
+  "title": "James Maddison's injury woes returns, forced off for Tottenham vs. Chelsea",
+  "description": "",
+  "source": "ESPN",
+  "feed_team_id": 19,
+  "keep": true,
+  "players": [
+   515
+  ]
+ },
+ {
+  "id": 21,
+  "title": "Daniel Farke provides Leeds United injury update on Calvert-Lewin, Stach and Okafor ahead of Sunderland clash",
+  "description": "",
+  "source": "roundtable.io",
+  "feed_team_id": 16,
+  "keep": true,
+  "players": [
+   346,
+   335,
+   336
+  ]
+ },
+ {
+  "id": 22,
+  "title": "David Ginola: The Newcastle and Spurs Cult Hero Crowned Player of the Year at 32",
+  "description": "",
+  "source": "The False 9",
+  "feed_team_id": 19,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 23,
+  "title": "Maddison a Doubt for Chelsea v Tottenham Team News",
+  "description": "",
+  "source": "The False 9",
+  "feed_team_id": 6,
+  "keep": true,
+  "players": [
+   515
+  ]
+ },
+ {
+  "id": 24,
+  "title": "Chelsea vs Spurs Player Ratings: Palmer Sent Off as Tel Seals 2-0 Win",
+  "description": "",
+  "source": "The False 9",
+  "feed_team_id": 6,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 25,
+  "title": "Liverpool vs. Brighton: Met Office statement puts Premier League fixture in doubt",
+  "description": "",
+  "source": "Sports Mole",
+  "feed_team_id": 14,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 26,
+  "title": "Virgil van Dijk on Momentum and Making Winning a Habit",
+  "description": "",
+  "source": "The Liverpool Offside",
+  "feed_team_id": 14,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 27,
+  "title": "\"Don't Necessarily Need To...\" Michael Carrick’s Bold Claim About Man Utd's Pressing",
+  "description": "",
+  "source": "roundtable.io",
+  "feed_team_id": 16,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 28,
+  "title": "Arsenal lineups vs Everton as Riccardo Calafiori rested and Bukayo Saka replacement decided",
+  "description": "",
+  "source": "Football London",
+  "feed_team_id": 1,
+  "keep": true,
+  "players": [
+   8,
+   12
+  ]
+ },
+ {
+  "id": 29,
+  "title": "Xabi Alonso issues Joao Pedro injury update after shock Chelsea blow for Tottenham clash",
+  "description": "",
+  "source": "London Evening Standard",
+  "feed_team_id": 6,
+  "keep": true,
+  "players": [
+   165
+  ]
+ },
+ {
+  "id": 30,
+  "title": "Women's Super League: Arsenal release pressure but can they kick on?",
+  "description": "",
+  "source": "BBC",
+  "feed_team_id": 1,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 31,
+  "title": "15 players could miss Liverpool vs Brighton including Dominik Szoboszlai and Kaoru Mitoma",
+  "description": "",
+  "source": "Liverpool.com",
+  "feed_team_id": 14,
+  "keep": true,
+  "players": [
+   368,
+   121
+  ]
+ },
+ {
+  "id": 32,
+  "title": "Renée: “We had some warrior performances”",
+  "description": "",
+  "source": "Arsenal.com",
+  "feed_team_id": 1,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 33,
+  "title": "Latest. Confirmed line-up: Five changes for trip to Palace",
+  "description": "",
+  "source": "Newcastle United",
+  "feed_team_id": 17,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 34,
+  "title": "How to watch Manchester United vs Bournemouth live: Stream, TV, team news, prediction",
+  "description": "",
+  "source": "NBC Sports",
+  "feed_team_id": 16,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 35,
+  "title": "Ben White desperate for England recall after impressing Thomas Tuchel during Arsenal win over Everton",
+  "description": "",
+  "source": "The Sun",
+  "feed_team_id": 9,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 36,
+  "title": "Four players could miss Arsenal vs Everton as Mikel Arteta gives Bukayo Saka update",
+  "description": "",
+  "source": "AOL.co.uk",
+  "feed_team_id": 1,
+  "keep": true,
+  "players": [
+   12
+  ]
+ },
+ {
+  "id": 37,
+  "title": "Jan Paul van Hecke explains why Tottenham team-mate cheekily kissed De Zerbi",
+  "description": "",
+  "source": "Football London",
+  "feed_team_id": 19,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 38,
+  "title": "Everton's new owners could immediately sack David Moyes",
+  "description": "",
+  "source": "Yahoo Sports",
+  "feed_team_id": 9,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 39,
+  "title": "Tyrell Malacia Reveals What He Didn't Get At Man Utd, \"It Was Difficult\"",
+  "description": "",
+  "source": "roundtable.io",
+  "feed_team_id": 16,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 40,
+  "title": "🚨 Barcola, Isak: Iraola makes 4 changes to his XI for Liverpool-Brighton",
+  "description": "",
+  "source": "Yahoo Sports",
+  "feed_team_id": 14,
+  "keep": true,
+  "players": [
+   627,
+   379
+  ]
+ },
+ {
+  "id": 41,
+  "title": "16 Conclusions from Chelsea 0-2 Spurs: Tonali-Fernandes, Tel, De Zerbi defy history ancient and recent",
+  "description": "",
+  "source": "Football365",
+  "feed_team_id": 19,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 42,
+  "title": "Tottenham XI vs Chelsea: Predicted lineup and confirmed team news",
+  "description": "",
+  "source": "London Evening Standard",
+  "feed_team_id": 6,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 43,
+  "title": "Will there be VAR for Fleetwood Town vs Arsenal?",
+  "description": "",
+  "source": "Yahoo Sports",
+  "feed_team_id": 1,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 44,
+  "title": "Match of the Day - Arsenal v Everton Highlights",
+  "description": "",
+  "source": "BBC",
+  "feed_team_id": 9,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 45,
+  "title": "Crystal Palace v Newcastle: We Need A Win Today – No Excuses",
+  "description": "",
+  "source": "The Newcastle United Blog",
+  "feed_team_id": 17,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 46,
+  "title": "Andoni Iraola needs an Alexis Mac Allister repeat after Liverpool update and new contract call",
+  "description": "",
+  "source": "Liverpool.com",
+  "feed_team_id": 14,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 47,
+  "title": "Newcastle United release huge Anthony Elanga update as Matias Fernandez-Pardo 'issues' revealed",
+  "description": "",
+  "source": "Shields Gazette",
+  "feed_team_id": 17,
+  "keep": true,
+  "players": [
+   454,
+   634
+  ]
+ },
+ {
+  "id": 48,
+  "title": "Newcastle United legend refused to attend Ballon d'Or afterparty after being voted in third place",
+  "description": "",
+  "source": "Chronicle Live",
+  "feed_team_id": 17,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 49,
+  "title": "Declan Rice Hamstring Worry After Arsenal Beat Everton",
+  "description": "",
+  "source": "The False 9",
+  "feed_team_id": 1,
+  "keep": true,
+  "players": [
+   13
+  ]
+ },
+ {
+  "id": 50,
+  "title": "“Alonso’s biggest mistake” – Chelsea had bigger problem than missing Joao Pedro claims journalist",
+  "description": "",
+  "source": "Talk Chelsea",
+  "feed_team_id": 6,
+  "keep": true,
+  "players": [
+   165
+  ]
+ },
+ {
+  "id": 51,
+  "title": "Declan Rice Arsenal injury concern sparked after unseen footage emerges",
+  "description": "",
+  "source": "Football London",
+  "feed_team_id": 1,
+  "keep": true,
+  "players": [
+   13
+  ]
+ },
+ {
+  "id": 52,
+  "title": "Chelsea face major problem as shock Alonso decision questioned",
+  "description": "",
+  "source": "London Evening Standard",
+  "feed_team_id": 6,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 53,
+  "title": "Liverpool coach issues positive injury update ahead of weekend clash",
+  "description": "",
+  "source": "DaveOCKOP",
+  "feed_team_id": 14,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 54,
+  "title": "Premier League highlights: Arsenal 2-0 Everton",
+  "description": "",
+  "source": "BBC",
+  "feed_team_id": 1,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 55,
+  "title": "Arsenal rocked by Riccardo Calafiori injury as Mikel Arteta confirms latest blow",
+  "description": "",
+  "source": "Daily Mirror",
+  "feed_team_id": 1,
+  "keep": true,
+  "players": [
+   8
+  ]
+ },
+ {
+  "id": 56,
+  "title": "+@▷[[FREE!STREAMS] Crystal Palace vs Newcastle United Ｌｉｖｅ Ｓｔｒｅａｍｉｎｇ Ｆｒｅｅ ＯＮ Ｔｖ Ｃｈａｎｎｅｌ 25 October 2026",
+  "description": "",
+  "source": "FC東京オフィシャルホームページ",
+  "feed_team_id": 17,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 57,
+  "title": "Liverpool vs Brighton: Lineups, Prediction, Odds & Bet Builder Tip",
+  "description": "",
+  "source": "WhoScored.com",
+  "feed_team_id": 14,
+  "keep": false,
+  "players": []
+ },
+ {
+  "id": 58,
+  "title": "PREVIEW | Liverpool vs Brighton & Hove Albion: team news, lineups, predictions (Premier League 25/10)",
+  "description": "",
+  "source": "Yahoo Sports",
+  "feed_team_id": 14,
+  "keep": true,
+  "players": []
+ },
+ {
+  "id": 59,
+  "title": "Man Utd blow as Bournemouth confirm injury boost for Old Trafford trip",
+  "description": "",
+  "source": "London Evening Standard",
+  "feed_team_id": 16,
+  "keep": true,
+  "players": []
+ }
+]

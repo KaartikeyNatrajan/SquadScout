@@ -14,6 +14,8 @@ from fpl_data.db.store import Store
 from fpl_data.fpl.client import FplClient, RateLimitedError
 from fpl_data.handlers.service import FplService
 from fpl_data.manager.loader import Loader
+from fpl_data.news.client import new_http_client
+from fpl_data.news.refresh import NewsRefresher
 from fpl_data.refresh import Refresher
 from fpl_data.server import start_server
 
@@ -61,6 +63,22 @@ async def refresh_forever(refresher: Refresher, wait: timedelta) -> None:
         wait = await refresh_all(refresher)
 
 
+# The news feeds are read on their own timer, apart from the FPL refresh, so a
+# broken feed never delays FPL data (or the other way round). NewsRefresher
+# skips the work unless its data is over an hour old.
+NEWS_CHECK_EVERY = timedelta(minutes=10)
+
+
+async def news_forever(news_refresher: NewsRefresher) -> None:
+    """Read the news feeds roughly hourly, until cancelled. Failures are only logged."""
+    while True:
+        try:
+            await news_refresher.refresh()
+        except Exception as err:
+            logger.warning("news refresh failed: %s", err)
+        await asyncio.sleep(NEWS_CHECK_EVERY.total_seconds())
+
+
 async def run() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -80,6 +98,8 @@ async def run() -> None:
     server, _ = await start_server(FplService(store, managers), settings.grpc_addr)
     logger.info("fpl_data_service listening: addr=%s db=%s", settings.grpc_addr, settings.db_path)
     refresh_task = asyncio.create_task(refresh_forever(refresher, wait))
+    news_http = new_http_client()
+    news_task = asyncio.create_task(news_forever(NewsRefresher(store, news_http)))
 
     # Wait for Ctrl+C (SIGINT) or SIGTERM (what Docker or `kill` send).
     stop = asyncio.Event()
@@ -90,6 +110,8 @@ async def run() -> None:
 
     logger.info("shutting down")
     refresh_task.cancel()
+    news_task.cancel()
     await server.stop(grace=5)  # lets in-flight requests finish first
     await client.aclose()
+    await news_http.aclose()
     store.close()

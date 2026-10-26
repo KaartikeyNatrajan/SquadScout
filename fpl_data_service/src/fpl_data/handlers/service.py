@@ -10,6 +10,7 @@ else is answered from SQLite.
     stats.py          GetPlayerGameweekStats, GetPlayerRecentForm
     manager_team.py   GetManagerTeam
     transfers.py      GetTransferTrends, EvaluateTransfers, SuggestTransfers
+    news.py           GetPlayerNews, GetTeamNews (stories saved by the hourly news job)
     base.py           shared helpers (lookups, limits, fixture memo)
     convert.py        turning database rows into protobuf messages
 
@@ -20,13 +21,19 @@ message, which makes them easy to test without a network.
 
 from fpl_data.handlers.fixtures import FixtureHandlers
 from fpl_data.handlers.manager_team import ManagerTeamHandlers
+from fpl_data.handlers.news import NewsHandlers
 from fpl_data.handlers.players import PlayerHandlers
 from fpl_data.handlers.stats import StatsHandlers
 from fpl_data.handlers.transfers import TransferHandlers
 
 
 class FplService(
-    PlayerHandlers, FixtureHandlers, StatsHandlers, ManagerTeamHandlers, TransferHandlers
+    PlayerHandlers,
+    FixtureHandlers,
+    StatsHandlers,
+    ManagerTeamHandlers,
+    TransferHandlers,
+    NewsHandlers,
 ):
     """Everything the FplDataService RPCs do. Each handler group above is a
     class with the methods for its topic; this class combines them."""

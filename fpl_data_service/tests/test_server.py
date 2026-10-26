@@ -58,6 +58,8 @@ async def test_every_rpc_in_the_proto_is_served(channel):
         "GetPlayerGameweekStats": pb.GetPlayerGameweekStatsRequest(player_id=12, gameweek=1),
         "GetPlayerRecentForm": pb.GetPlayerRecentFormRequest(player_id=12),
         "GetTransferTrends": pb.GetTransferTrendsRequest(),
+        "GetPlayerNews": pb.GetPlayerNewsRequest(player_id=1),
+        "GetTeamNews": pb.GetTeamNewsRequest(team_id=1),
         "GetManagerTeam": pb.GetManagerTeamRequest(team_id=6),
         "EvaluateTransfers": pb.EvaluateTransfersRequest(
             team_id=6, player_out_ids=[124], player_in_ids=[286]
