@@ -31,7 +31,7 @@ service FplDataService {
   // One player's stats for one gameweek.
   rpc GetPlayerGameweekStats(GetPlayerGameweekStatsRequest) returns (GetPlayerGameweekStatsResponse);
 
-  // One player's most recent matches plus totals over them
+  // One player's last few gameweeks plus totals over them
   // ("how has X been playing lately?").
   rpc GetPlayerRecentForm(GetPlayerRecentFormRequest) returns (GetPlayerRecentFormResponse);
 
@@ -56,8 +56,9 @@ service FplDataService {
   // and reports the cost (points hit, money) and expected points gained.
   rpc EvaluateTransfers(EvaluateTransfersRequest) returns (EvaluateTransfersResponse);
 
-  // Searches for the best transfers. NOT IMPLEMENTED YET: returns UNIMPLEMENTED.
-  // The wiring is in place; the search itself lives in internal/optimizer.
+  // Searches for the best transfers (1 to 3 of them), checking every
+  // candidate against the squad rules, and ranks them by projected points
+  // gained minus the points hit.
   rpc SuggestTransfers(SuggestTransfersRequest) returns (SuggestTransfersResponse);
 }
 
@@ -187,8 +188,8 @@ message GetPlayerFixturesResponse {
 
 // ---------- Stats ----------
 
-// One player's stats for one match. (GetPlayerGameweekStatsResponse.stats
-// also uses it for a whole gameweek's totals.)
+// One player's stats for one gameweek: FPL's totals across every match his
+// team played that week (usually one; two in a "double gameweek").
 message GameweekStats {
   int32 player_id = 1;
   int32 gameweek = 2;
@@ -201,7 +202,8 @@ message GameweekStats {
   double expected_goals = 9;
   double expected_assists = 10;
 
-  // Which match this was. Left empty in gameweek totals that cover two matches.
+  // Which match this was, when the gameweek had exactly one (almost always).
+  // Left empty for a double gameweek: see match_results for both matches.
   int32 fixture_id = 11;
   int32 opponent_team_id = 12;
   string opponent_team_name = 13;
@@ -210,12 +212,28 @@ message GameweekStats {
   optional int32 team_score = 16;      // the player's team's goals
   optional int32 opponent_score = 17;
 
-  int32 starts = 18;  // 1 if he started, 0 if he came off the bench or didn't play
+  int32 starts = 18;  // matches he started this gameweek (0 if he came off the bench or didn't play)
   int32 goals_conceded = 19;
   int32 saves = 20;
   int32 yellow_cards = 21;
   int32 red_cards = 22;
   double expected_goal_involvements = 23;
+
+  // Each match his team played this gameweek, with his minutes and points in it.
+  repeated MatchResult match_results = 24;
+}
+
+// One match from a player's side.
+message MatchResult {
+  int32 fixture_id = 1;
+  int32 opponent_team_id = 2;
+  string opponent_team_name = 3;
+  bool was_home = 4;
+  string kickoff_time = 5;           // RFC 3339
+  optional int32 team_score = 6;     // the player's team's goals; unset if not played yet
+  optional int32 opponent_score = 7;
+  int32 minutes = 8;                 // 0 if he didn't play
+  int32 total_points = 9;            // his FPL points in this match
 }
 
 message GetPlayerGameweekStatsRequest {
@@ -224,28 +242,30 @@ message GetPlayerGameweekStatsRequest {
 }
 
 message GetPlayerGameweekStatsResponse {
-  // Totals for the gameweek. Equal to the single match in a normal gameweek.
-  GameweekStats stats = 1;
-  // One entry per match: usually one, two in a "double gameweek".
-  repeated GameweekStats matches = 2;
+  GameweekStats stats = 1;  // the gameweek's totals, with each match in stats.match_results
+  // No longer filled: FPL reports full stats per gameweek, not per match.
+  // Use stats.match_results for each match's minutes and points.
+  repeated GameweekStats matches = 2 [deprecated = true];
 }
 
 message GetPlayerRecentFormRequest {
   int32 player_id = 1;
-  int32 last_n = 2;  // number of matches; 0 = server default (5); at most 10
+  int32 last_n = 2;  // number of gameweeks; 0 = server default (5); at most 10
 }
 
 message GetPlayerRecentFormResponse {
   int32 player_id = 1;
   string web_name = 2;
-  repeated GameweekStats matches = 3;  // most recent first
-  FormSummary summary = 4;             // totals over `matches`
+  // One entry per gameweek his team played in, most recent first. (The field
+  // is called "matches" for compatibility; a double gameweek is one entry.)
+  repeated GameweekStats matches = 3;
+  FormSummary summary = 4;  // totals over `matches`
 }
 
-// Totals over a run of matches, so the reader doesn't have to add them up.
+// Totals over a run of gameweeks, so the reader doesn't have to add them up.
 message FormSummary {
-  int32 matches = 1;      // matches covered, including ones he didn't play in
-  int32 appearances = 2;  // matches in which he played at least one minute
+  int32 matches = 1;      // gameweeks covered, including ones he didn't play in
+  int32 appearances = 2;  // gameweeks in which he played at least one minute
   int32 minutes = 3;
   int32 goals_scored = 4;
   int32 assists = 5;
@@ -254,16 +274,34 @@ message FormSummary {
   int32 total_points = 8;
   double expected_goals = 9;
   double expected_assists = 10;
-  double points_per_match = 11;  // total_points / matches
+  double points_per_match = 11;  // total_points / matches (points per gameweek)
 }
 
 // ---------- Finding players ----------
 
-// A player plus his next few fixtures: enough to judge him as a transfer
-// target without another call.
+// Our own estimate of a player's points over the next few gameweeks. FPL only
+// publishes expected points for the next gameweek, but transfer decisions are
+// about several weeks. It is built from his recent minutes and points, his
+// availability and how hard each opponent is, and counts a double gameweek
+// twice and a blank gameweek as zero. A rough guide, not a promise.
+message Projection {
+  int32 horizon = 1;  // gameweeks covered, starting with the next one
+  double total = 2;   // expected points over the whole horizon
+  repeated GameweekProjection gameweeks = 3;
+}
+
+message GameweekProjection {
+  int32 gameweek = 1;
+  double expected_points = 2;
+  int32 matches = 3;  // 0 = his club has no match that week
+}
+
+// A player plus his next few fixtures and our projection: enough to judge him
+// as a transfer target without another call.
 message PlayerOutlook {
   Player player = 1;
   repeated PlayerFixture next_fixtures = 2;  // the next 3, soonest first
+  Projection projection = 3;
 }
 
 // What FindPlayers sorts by, best first.
@@ -322,6 +360,7 @@ message SquadPlayer {
   // True if we don't know what he was bought for (e.g. he has been in the
   // squad since the start), so selling_price is just his current price.
   bool selling_price_is_estimate = 7;
+  Projection projection = 8;
 }
 
 message GetManagerTeamRequest {
@@ -361,6 +400,16 @@ message EvaluateTransfersRequest {
   optional int32 max_hit = 4;
   // "wildcard" or "freehit" to make every transfer free (must be available).
   string chip = 5;
+  // Gameweeks to project over, starting with the next one. 0 = server default (5); at most 10.
+  int32 horizon = 6;
+
+  // FPL only shows a squad as it was at the last deadline, so transfers the
+  // manager has made since then are invisible to us. If the manager says how
+  // things stand now, these override what we know. Give all three after
+  // making transfers, or the money and free transfers will be out of date.
+  repeated int32 current_squad_ids = 7;  // the 15 players in the squad right now
+  optional double current_bank = 8;      // £m in the bank right now
+  optional int32 free_transfers_available = 9;
 }
 
 message EvaluateTransfersResponse {
@@ -385,23 +434,59 @@ message EvaluateTransfersResponse {
   repeated PlayerOutlook players_out = 11;
   repeated PlayerOutlook players_in = 12;
   repeated string notes = 13;
+
+  // The same comparison over `horizon` gameweeks, using our projections.
+  // This, not the next-gameweek-only numbers above, is what to weigh a points hit against.
+  int32 horizon = 14;
+  double projected_points_out = 15;  // summed over the players leaving
+  double projected_points_in = 16;   // summed over the players joining
+  // The change in the projected points of the best starting eleven, minus the
+  // hit. Only 11 of the 15 players score, so this is smaller than in - out when
+  // a bench player is involved.
+  double projected_points_net = 17;
 }
 
 // ---------- Suggesting transfers (not implemented yet) ----------
 
 message SuggestTransfersRequest {
   int32 team_id = 1;
-  int32 max_transfers = 2;  // 0 = up to the free transfers available
+  int32 max_transfers = 2;  // 0 = up to the free transfers available (at least 1); at most 3
   optional int32 max_hit = 3;
+  int32 horizon = 4;  // gameweeks to project over; 0 = server default (5); at most 10
+  // As in EvaluateTransfersRequest: the manager's squad, bank and free
+  // transfers right now, if they differ from what FPL showed at the last deadline.
+  repeated int32 current_squad_ids = 5;
+  optional double current_bank = 6;
+  optional int32 free_transfers_available = 7;
+}
+
+// A player in a suggested transfer.
+message TransferPlayer {
+  int32 id = 1;
+  string web_name = 2;
+  string team_name = 3;
+  Position position = 4;
+  double price = 5;  // £m: what he sells for (players out) or costs (players in)
+  double projected_points = 6;  // over the horizon
 }
 
 message TransferSuggestion {
   repeated int32 player_out_ids = 1;
   repeated int32 player_in_ids = 2;
-  int32 hit = 3;
-  double expected_points_gain = 4;  // after the hit
+  int32 hit = 3;                    // points deducted
+  // The change in the projected points of the best starting eleven over the
+  // horizon, minus the hit.
+  double expected_points_gain = 4;
+  repeated TransferPlayer players_out = 5;
+  repeated TransferPlayer players_in = 6;
+  double bank_after = 7;  // £m
 }
 
 message SuggestTransfersResponse {
-  repeated TransferSuggestion suggestions = 1;  // best first
+  // Legal transfer sets that gain points, best first. Every one has been
+  // checked against all the squad rules. Empty means no transfer is worth
+  // making (within the hit the manager accepts).
+  repeated TransferSuggestion suggestions = 1;
+  int32 horizon = 2;
+  repeated string notes = 3;
 }

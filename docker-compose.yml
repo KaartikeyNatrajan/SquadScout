@@ -1,4 +1,4 @@
-# Not used yet. For now, run each service directly with `make run-go`,
+# Not used yet. For now, run each service directly with `make run-data`,
 # `make run-py` and `make vllm`.
 #
 # When you containerise (after the agent works end to end):

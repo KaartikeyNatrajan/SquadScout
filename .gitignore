@@ -1,13 +1,15 @@
 # Generated protobuf code (recreate with `make proto`)
-fpl_data_service/gen/
+fpl_data_service/src/squadscout/
 langgraph_service/src/squadscout/
 
 # Secrets / local config
 .env
 !.env.example
 
-# Go
+# Local cache and build leftovers (also inside legacy/)
 fpl_data_service/data/
+legacy/**/data/
+legacy/**/gen/
 *.db
 *.db-shm
 *.db-wal
