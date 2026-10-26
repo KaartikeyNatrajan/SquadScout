@@ -394,3 +394,29 @@ async def test_suggest_errors(service):
         service.suggest_transfers(pb.SuggestTransfersRequest(team_id=6, current_squad_ids=[1, 2]))
     )
     assert err.code == grpc.StatusCode.INVALID_ARGUMENT
+
+
+async def test_trends_say_why_a_player_is_moving(service):
+    top = (
+        (await service.get_transfer_trends(pb.GetTransferTrendsRequest(limit=3))).players[0].player
+    )
+
+    assert top.web_name == "Groß"
+    assert top.transfer_sentiment.startswith("heavily bought")
+    assert top.net_bought_rank == 1
+
+
+async def test_players_being_sold_read_as_sold(service):
+    out = (
+        (
+            await service.get_transfer_trends(
+                pb.GetTransferTrendsRequest(direction=pb.TRANSFER_DIRECTION_OUT, limit=1)
+            )
+        )
+        .players[0]
+        .player
+    )
+
+    assert out.net_sold_rank == 1
+    assert out.transfer_sentiment.startswith(("heavily sold", "being sold"))
+    assert out.net_transfers_event < 0

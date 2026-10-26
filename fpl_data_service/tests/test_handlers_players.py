@@ -104,3 +104,42 @@ async def test_find_players_leaves_out_a_managers_squad(service):
 )
 async def test_find_players_bad_requests(service, request_message, code):
     assert (await error_of(service.find_players(request_message))).code == code
+
+
+async def test_a_player_comes_with_what_other_managers_are_doing(service):
+    # Groß: in the saved data the single most bought player of the gameweek.
+    gross = (await search(service, "gross"))[0]
+
+    assert gross.net_transfers_event == 753_027  # 763,845 bought, 10,818 sold
+    assert gross.net_transfers_percent == pytest.approx(6.851, abs=0.001)
+    assert (gross.net_bought_rank, gross.net_sold_rank) == (1, 667)
+    assert gross.transfer_sentiment == (
+        "heavily bought: net +6.85% of all managers this gameweek (the most bought player)"
+    )
+    assert gross.price_change_progress == 86.0
+    assert (
+        gross.price_change_outlook
+        == "no price change expected within 3 price updates (86% of the way to a rise)"
+    )
+    # Not enough history yet for a 24 hour figure, so it is left unset rather than shown as 0.
+    assert not gross.HasField("net_transfers_24h")
+
+
+async def test_the_last_24_hours_are_shown_once_there_is_history(service):
+    # Pretend a snapshot from 25 hours ago, when Saka had 2,000 fewer buyers and 500 fewer sellers.
+    from datetime import UTC, datetime, timedelta
+
+    saka = service.store.conn.execute(
+        "SELECT transfers_in_total, transfers_out_total FROM players WHERE id = 12"
+    ).fetchone()
+    taken = (datetime.now(UTC) - timedelta(hours=25)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    service.store.conn.executemany(
+        "INSERT INTO transfer_snapshots (player_id, taken_at, transfers_in, transfers_out) VALUES (?, ?, ?, ?)",
+        [(12, taken, saka["transfers_in_total"] - 2000, saka["transfers_out_total"] - 500)],
+    )
+
+    found = (await search(service, "saka"))[0]
+
+    assert found.web_name == "Saka"
+    assert found.HasField("net_transfers_24h")
+    assert found.net_transfers_24h == 1500

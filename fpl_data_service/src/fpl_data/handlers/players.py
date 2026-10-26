@@ -32,7 +32,10 @@ class PlayerHandlers(ServiceBase):
         rows = players.search(self.store, name, limit)
         # No match is an empty list, not an error: "nobody called that" is a
         # valid answer the caller can act on.
-        return pb.SearchPlayersResponse(players=[convert.to_player(p) for p in rows])
+        recent = self.recent_transfers()
+        return pb.SearchPlayersResponse(
+            players=[convert.to_player(p, recent.get(p.id)) for p in rows]
+        )
 
     async def find_players(self, request: pb.FindPlayersRequest) -> pb.FindPlayersResponse:
         """Players matching the request's filters, best first, each with his

@@ -15,6 +15,15 @@ from pydantic import BaseModel
 # ---- /bootstrap-static/ -------------------------------------------------
 
 
+class PriceProjection(BaseModel):
+    """FPL's projection of a player's progress towards a price change, `offset`
+    price updates from now (offset 0 = the next one)."""
+
+    offset: int
+    projected_percent: float
+    likelihood: int
+
+
 class Element(BaseModel):
     """FPL's name for a player."""
 
@@ -46,6 +55,14 @@ class Element(BaseModel):
     transfers_out_event: int
     cost_change_event: int  # tenths of £m since the last deadline
     news_added: str | None  # RFC 3339; null if no news
+    transfers_in: int  # by all managers, the whole season
+    transfers_out: int
+    # How far the player is towards his next price change, from -100 (a fall) to
+    # +100 (a rise). FPL doesn't document this field. It follows net transfers
+    # (positive when more managers buy than sell) and goes back to about 0 after a
+    # price change, which is the reading the rest of the code relies on.
+    price_change_percent: float
+    price_change_projections: list[PriceProjection]
 
 
 class Team(BaseModel):
@@ -86,6 +103,7 @@ class Bootstrap(BaseModel):
     teams: list[Team]
     events: list[Event]
     chips: list[Chip]
+    total_players: int  # how many managers are playing FPL
 
 
 # ---- /fixtures/ -----------------------------------------------------------

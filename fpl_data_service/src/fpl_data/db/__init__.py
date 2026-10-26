@@ -12,6 +12,7 @@ One module per kind of data; each has plain functions that take the `Store`:
     player_gameweeks.py players' stats per gameweek (from /event/{gw}/live/)
     manager_teams.py    managers' teams, saved until the next deadline
     player_prices.py    players' price in each gameweek (for purchase prices)
+    transfer_snapshots.py  how many managers bought/sold each player over time
 
 The functions return small dataclasses ("rows"), never protobuf messages, so
 this package doesn't depend on gRPC; the handlers convert.

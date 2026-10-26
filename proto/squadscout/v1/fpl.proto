@@ -109,6 +109,20 @@ message Player {
   int32 transfers_out_event = 28;
   double price_change_event = 29;  // £m change since the last deadline, e.g. 0.1 or -0.1
   string news_added = 30;          // when `news` was last updated (RFC 3339); empty if no news
+
+  // What other FPL managers are doing with him: a sign of the crowd's view
+  // (form, fixtures, injury worries). Counted over all managers.
+  int32 net_transfers_event = 31;     // managers who bought him minus those who sold him, since the last deadline
+  double net_transfers_percent = 32;  // that as a % of ALL managers (2.8 = 2.8% of everyone bought him)
+  int32 net_bought_rank = 33;         // 1 = the player most net bought this gameweek
+  int32 net_sold_rank = 34;           // 1 = the player most net sold this gameweek
+  // Net transfers over the last 24 hours, across a deadline if need be. Unset
+  // until the service has 24 hours of history.
+  optional int32 net_transfers_24h = 35;
+  string transfer_sentiment = 36;     // the above in a sentence, e.g. "heavily bought: net +2.80% ..."
+  // How far he is towards his next price change: -100 (a fall) .. +100 (a rise).
+  double price_change_progress = 37;
+  string price_change_outlook = 38;   // e.g. "likely to rise at the next price update"
 }
 
 // Proto3 enums must start at 0, and 0 is the default when a field is unset,

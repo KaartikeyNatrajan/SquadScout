@@ -5,7 +5,7 @@ import logging
 
 import grpc
 
-from fpl_data.db import players
+from fpl_data.db import players, transfer_snapshots
 from fpl_data.db.players import PlayerRow
 from fpl_data.db.store import Store
 from fpl_data.fpl.client import FplError
@@ -70,6 +70,12 @@ class ServiceBase:
                 grpc.StatusCode.UNAVAILABLE, f"team {team_id} can't be loaded right now"
             ) from err
 
+    def recent_transfers(self) -> dict[int, int]:
+        """Each player's net transfers over the last 24 hours (empty until the
+        service has that much history). Look it up once per request and pass it
+        to convert.to_player."""
+        return transfer_snapshots.net_transfers_over(self.store)
+
     def projector(self, horizon: int = DEFAULT_HORIZON) -> Projector:
         """A Projector for this request. Share it between everything one request
         shows, so each club's fixtures and each player's history are looked up once."""
@@ -81,9 +87,10 @@ class ServiceBase:
         """Players with their club's next few fixtures and our projection of
         their points, so the caller can judge each one without another call."""
         projector = projector or self.projector()
+        recent = self.recent_transfers()
         return [
             pb.PlayerOutlook(
-                player=convert.to_player(p),
+                player=convert.to_player(p, recent.get(p.id)),
                 next_fixtures=projector.fixtures.next(p.team_id),
                 projection=projector.to_pb(projector.project(p)),
             )

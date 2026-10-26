@@ -6,6 +6,7 @@ handler stays short. Money is stored in tenths of £m and converted here.
 
 import math
 
+from fpl_data import sentiment
 from fpl_data.db.fixtures import FixtureRow
 from fpl_data.db.player_gameweeks import PlayerGameweekRow
 from fpl_data.db.players import PlayerRow
@@ -46,7 +47,8 @@ def round2(x: float) -> float:
     return math.copysign(whole, x) / 100
 
 
-def to_player(p: PlayerRow) -> pb.Player:
+def to_player(p: PlayerRow, net_transfers_24h: int | None = None) -> pb.Player:
+    """`net_transfers_24h` is his net transfers over the last 24 hours, if known."""
     return pb.Player(
         id=p.id,
         web_name=p.web_name,
@@ -78,6 +80,19 @@ def to_player(p: PlayerRow) -> pb.Player:
         transfers_out_event=p.transfers_out_event,
         price_change_event=pounds(p.cost_change_event),
         news_added=p.news_added,
+        net_transfers_event=p.transfers_in_event - p.transfers_out_event,
+        net_transfers_percent=round(p.net_transfers_percent, 3),
+        net_bought_rank=p.net_bought_rank,
+        net_sold_rank=p.net_sold_rank,
+        net_transfers_24h=net_transfers_24h,  # None stays unset
+        transfer_sentiment=sentiment.transfer_sentiment(
+            p.transfers_in_event - p.transfers_out_event,
+            p.net_transfers_percent,
+            p.net_bought_rank,
+            p.net_sold_rank,
+        ),
+        price_change_progress=round(p.price_change_progress, 1),
+        price_change_outlook=sentiment.price_outlook(p.price_change_progress, p.price_projections),
     )
 
 

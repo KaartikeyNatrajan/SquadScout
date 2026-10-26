@@ -19,6 +19,7 @@ class ManagerTeamHandlers(ServiceBase):
         current = self.squad_players(team)
 
         projector = self.projector()
+        recent = self.recent_transfers()
         squad_value = 0.0
         squad = []
         for pick in team.picks:
@@ -26,7 +27,7 @@ class ManagerTeamHandlers(ServiceBase):
             squad_value += pounds(pick.selling_price)
             squad.append(
                 pb.SquadPlayer(
-                    player=convert.to_player(player),
+                    player=convert.to_player(player, recent.get(player.id)),
                     next_fixtures=projector.fixtures.next(player.team_id),
                     squad_position=pick.squad_position,
                     is_captain=pick.is_captain,

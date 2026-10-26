@@ -41,6 +41,13 @@ class PlayerRow:
     transfers_in_event: int  # by all managers since the last deadline
     transfers_out_event: int
     cost_change_event: int  # tenths of £m since the last deadline
+    net_transfers_percent: float  # this gameweek's net transfers, as % of all managers
+    net_bought_rank: int  # 1 = the player most net bought by managers this gameweek
+    net_sold_rank: int  # 1 = the player most net sold
+    price_change_progress: float  # -100 (a fall) .. +100 (a rise); see fpl/models.py
+    price_projections: list[
+        float
+    ]  # that progress after the next 1, 2, 3 price updates (may be shorter)
 
 
 # The SELECT shared by every player query; each query adds its own WHERE /
@@ -54,14 +61,23 @@ _SELECT = """
            p.minutes, p.starts, p.goals_scored, p.assists, p.clean_sheets, p.bonus,
            p.expected_goals, p.expected_assists, p.expected_goal_involvements,
            p.points_per_game, p.ep_next AS expected_points_next,
-           p.transfers_in_event, p.transfers_out_event, p.cost_change_event
+           p.transfers_in_event, p.transfers_out_event, p.cost_change_event,
+           p.net_transfers_percent, p.net_bought_rank, p.net_sold_rank, p.price_change_progress,
+           p.price_projection_0, p.price_projection_1, p.price_projection_2
     FROM players p
     JOIN teams t ON t.id = p.team_id"""
 
 
 def _query(store: Store, sql: str, params: Sequence = ()) -> list[PlayerRow]:
     rows = store.conn.execute(sql, params).fetchall()
-    return [PlayerRow(**dict(row)) for row in rows]
+    return [_row(row) for row in rows]
+
+
+def _row(row) -> PlayerRow:
+    """A result row as a PlayerRow. The three price projection columns become one list."""
+    values = dict(row)
+    projections = [values.pop(f"price_projection_{i}") for i in range(3)]
+    return PlayerRow(**values, price_projections=[x for x in projections if x is not None])
 
 
 def search(store: Store, name: str, limit: int) -> list[PlayerRow]:

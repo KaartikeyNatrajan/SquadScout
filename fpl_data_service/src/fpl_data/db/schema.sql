@@ -9,7 +9,8 @@
 --
 -- Where each table's data comes from (see refresh.py):
 --   teams, events, players,
---   chips                   <- /bootstrap-static/        (refreshed hourly)
+--   chips, transfer_snapshots
+--                           <- /bootstrap-static/        (refreshed hourly)
 --   fixtures                <- /fixtures/                (refreshed hourly)
 --   player_gameweeks,
 --   player_gameweek_matches <- /event/{gw}/live/         (one download per gameweek)
@@ -69,6 +70,15 @@ CREATE TABLE IF NOT EXISTS players (
     expected_goal_involvements    REAL NOT NULL DEFAULT 0,
     points_per_game               REAL NOT NULL DEFAULT 0,
     ep_next                       REAL NOT NULL DEFAULT 0,  -- FPL's expected points, next gameweek
+    transfers_in_total            INTEGER NOT NULL DEFAULT 0,  -- by all managers, the whole season
+    transfers_out_total           INTEGER NOT NULL DEFAULT 0,
+    net_transfers_percent         REAL NOT NULL DEFAULT 0,  -- this gameweek's net transfers as % of all managers
+    net_bought_rank               INTEGER NOT NULL DEFAULT 0,  -- 1 = the most net bought this gameweek
+    net_sold_rank                 INTEGER NOT NULL DEFAULT 0,  -- 1 = the most net sold this gameweek
+    price_change_progress         REAL NOT NULL DEFAULT 0,  -- -100 (a fall) .. +100 (a rise)
+    price_projection_0            REAL,  -- that progress after the next price update; NULL if FPL gave none
+    price_projection_1            REAL,  -- after the one after
+    price_projection_2            REAL,
     news_added                    TEXT,                     -- when news was updated; NULL if no news
     transfers_in_event            INTEGER NOT NULL DEFAULT 0,  -- by all managers since the last deadline
     transfers_out_event           INTEGER NOT NULL DEFAULT 0,
@@ -156,6 +166,20 @@ CREATE TABLE IF NOT EXISTS player_prices (
     price      INTEGER NOT NULL,  -- tenths of £m
     PRIMARY KEY (player_id, gameweek)
 );
+
+-- How many managers had bought and sold each player (season totals) at the time
+-- of each refresh. The difference between two snapshots says how many net
+-- transfers happened in between, which shows momentum across deadlines (the
+-- per-gameweek counts in `players` reset at every deadline). Old rows are deleted.
+CREATE TABLE IF NOT EXISTS transfer_snapshots (
+    player_id      INTEGER NOT NULL REFERENCES players (id),
+    taken_at       TEXT NOT NULL,  -- RFC 3339, UTC
+    transfers_in   INTEGER NOT NULL,
+    transfers_out  INTEGER NOT NULL,
+    PRIMARY KEY (player_id, taken_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_transfer_snapshots_taken_at ON transfer_snapshots (taken_at);
 
 -- Tracks when each dataset was last pulled from the FPL API (cache freshness).
 -- dataset is "bootstrap", "fixtures" or "event-live/<gameweek>".

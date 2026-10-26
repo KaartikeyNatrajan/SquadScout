@@ -1,7 +1,7 @@
 # Squad Scout: how the code works
 
 A beginner-friendly walkthrough of the codebase, written 2026-09-27 and
-updated 2026-10-25 (the data service is Python, with projections and a transfer optimizer). Things change; if this disagrees with the
+updated 2026-10-26 (the data service is Python, with projections, a transfer optimizer and transfer sentiment). Things change; if this disagrees with the
 code, the code wins. For diagrams, see [architecture.md](architecture.md).
 
 ## 1. The big picture
@@ -159,6 +159,7 @@ fpl_data_service/
 │   ├── manager/             a manager's team: free transfers, chips, selling prices
 │   ├── squad.py             the verifier: FPL's squad rules
 │   ├── lineup.py            the best starting eleven (only 11 of 15 score)
+│   ├── sentiment.py         what other managers are doing with a player, in words
 │   ├── projection.py        expected points over the next few gameweeks
 │   ├── optimizer.py         transfer search: tries 1-3 swaps, checks each
 │   ├── db/                  SQLite: tables, saving, queries
@@ -288,6 +289,8 @@ small margin, which is typical because football points are very noisy, so treat
 projections as a rough guide. `handlers/projector.py` gathers a player's recent
 gameweeks and fixtures from the database and calls it.
 
+**`sentiment.py`**: what are other managers doing with this player? Every week hundreds of thousands of transfers happen; heavy buying usually means form or a good run of fixtures, heavy selling means injury or lost form. The raw counts mean little to a small language model, so this turns them into a sentence ("heavily bought: net +3.15% of all managers this gameweek (the most bought player)") and says whether a price rise or fall is coming. The database keeps a snapshot of everyone's transfer totals at each refresh, so the service can also say how many net transfers happened in the last 24 hours, even across a deadline (FPL's weekly counts restart at every deadline).
+
 **`lineup.py`**: only 11 of a squad's 15 players score. This picks the best valid
 starting eleven (one of eight formations) from the players' projected points. A
 transfer is worth the change in that eleven, so upgrading someone who would sit
@@ -303,7 +306,7 @@ make the top five. A test checks it finds the same best answer as a plain
 try-everything search. It does no database or network work, so the handler runs
 it in a worker thread.
 
-**Tests**: `make test` runs 255 tests for this service without the internet.
+**Tests**: `make test` runs 297 tests for this service without the internet.
 `tests/fake_fpl.py` is a fake FPL website (an `httpx.MockTransport`) that serves
 the saved files from `tests/testdata/`; the real code is pointed at it. Each
 test gets a fresh temporary database. `@pytest.mark.parametrize` runs one test

@@ -1,7 +1,7 @@
 # Squad Scout architecture
 
 How the system fits together, with most of the detail on `fpl_data_service`.
-State as of 2026-10-25. The data service is Python (it was ported from Go; the Go version is in `legacy/`). If this disagrees with the code, the code wins.
+State as of 2026-10-26. The data service is Python (it was ported from Go; the Go version is in `legacy/`). If this disagrees with the code, the code wins.
 
 > **Viewing the diagrams.** They're written in [Mermaid](https://mermaid.js.org/).
 > GitHub renders them automatically. In VS Code, install the "Markdown Preview
@@ -138,6 +138,7 @@ What lives where:
 | `refresh.py` | | Background downloads of bootstrap, fixtures and gameweek stats, with one freshness rule (`_if_stale`) |
 | `manager/` | `loader.py` downloading + saving, `rules.py` pure FPL rules | A manager's team: Free Hit revert, free-transfer count, chips left, selling prices (from price history); saved in SQLite until the next deadline |
 | `squad.py` | | The verifier: FPL squad rules, applying transfers, hit cost. Pure functions |
+| `sentiment.py` | | What other managers are doing with a player (net transfers, rank, price-change outlook) as plain words. Pure |
 | `lineup.py` | | The best starting eleven of a squad by projected points (only 11 of 15 score). Pure |
 | `projection.py` | | Expected points over the next few gameweeks from recent minutes and points, availability and fixture difficulty. Pure; backtested constants |
 | `optimizer.py` | | Tries every 1-3 swap, checks each with the verifier, ranks by the change in the best eleven minus the hit. Pure, so it runs in a worker thread |
@@ -178,6 +179,7 @@ flowchart LR
         t3[("player_gameweeks,<br/>player_gameweek_matches")]
         t4[("manager_teams")]
         t5[("player_prices")]
+        t6[("transfer_snapshots")]
         log[("sync_log<br/>when each dataset was saved")]
     end
 
@@ -186,6 +188,7 @@ flowchart LR
     ev -- "timer: current + previous week<br/>if older than 1 h; older weeks once" --> t3
     en -- "on request: until the<br/>next deadline" --> t4
     es -- "on request, once per player,<br/>kept forever" --> t5
+    bs -- "a snapshot of the transfer totals<br/>with every refresh, kept 8 days" --> t6
     t1 & t2 & t3 -.-> log
 ```
 
@@ -401,7 +404,7 @@ database or network calls, which is why it can safely run in a worker thread
 
 ## 6. The database
 
-`src/fpl_data/db/schema.sql`, schema version 5.
+`src/fpl_data/db/schema.sql`, schema version 6.
 
 ```mermaid
 erDiagram
@@ -409,6 +412,7 @@ erDiagram
     teams ||--o{ fixtures : "home team"
     teams ||--o{ fixtures : "away team"
     players ||--o{ player_prices : "price per gameweek"
+    players ||--o{ transfer_snapshots : "totals over time"
     players ||--o{ player_gameweeks : "one row per gameweek"
     player_gameweeks ||--|{ player_gameweek_matches : "one or two matches"
     fixtures ||--o{ player_gameweek_matches : "joined on fixture_id"
@@ -472,6 +476,12 @@ erDiagram
         int team_id "his club, to know his side"
         int minutes
         int total_points
+    }
+    transfer_snapshots {
+        int player_id PK
+        text taken_at PK
+        int transfers_in "season total"
+        int transfers_out "season total"
     }
     player_prices {
         int player_id PK
@@ -655,7 +665,7 @@ flowchart LR
     td --> fake --> client --> real --> tmp
 ```
 
-- `make test` runs 255 data-service tests and the 2 agent tests, with no network,
+- `make test` runs 297 data-service tests and the 2 agent tests, with no network,
   GPU or servers needed.
 - The saved data was chosen to cover tricky cases: team 1 played a **Free Hit**
   the week before; team 6 has **3 Arsenal and 3 Chelsea players** (so buying

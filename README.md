@@ -36,10 +36,12 @@ Everything is Python (each service is its own `uv` project). The contract betwee
 | `GetPlayerFixtures` | A player's next fixtures from his team's side, with difficulty, plus expected points for the next gameweek |
 | `GetPlayerGameweekStats` | A player's stats in one gameweek |
 | `GetFixtures` | A team's next fixtures, by team id or name ("Arsenal", "Man Utd", "ARS") |
-| `GetTransferTrends` | The most transferred in or out players this gameweek |
+| `GetTransferTrends` | The most transferred in or out players this gameweek, with a plain-word explanation of the crowd's behaviour |
 | `GetManagerTeam` | A manager's squad by FPL team id: every player's outlook and projection, selling prices, bank, free transfers, chips left |
 | `EvaluateTransfers` | Checks a set of transfers against every squad rule and reports the points hit, money left, and the projected gain over several gameweeks. The manager can say what their squad, bank and free transfers are *now*, since FPL only shows the last deadline |
 | `SuggestTransfers` | The best 1-3 transfers: searches the options, checks each against the squad rules, and ranks them by the projected gain in the best starting eleven minus the points hit |
+
+**What other managers are doing.** Every player comes with transfer sentiment: net transfers as a share of all managers, his rank among the most bought and sold, the last 24 hours (once the service has that much history), a sentence like *"heavily bought: net +3.15% of all managers this gameweek (the most bought player)"*, and whether his price is about to move (*"likely to rise within 2 price updates"*).
 
 **Projections.** FPL only publishes expected points for the next gameweek. We also estimate points over the next few gameweeks from a player's recent minutes and points, his availability, and how hard each opponent is (double gameweeks count twice, blank ones zero). It is a rough guide: in a backtest on real gameweeks it was unbiased and modestly better than "his recent average" (details in `src/fpl_data/projection.py`).
 
@@ -119,6 +121,7 @@ fpl_data_service/
     squad.py                      the verifier: FPL squad rules and transfer checks
     lineup.py                     the best starting eleven of a squad (only 11 of 15 score)
     projection.py                 expected points over the next few gameweeks
+    sentiment.py                  transfer activity and price-change outlook, in plain words
     optimizer.py                  transfer search: tries 1-3 swaps, checks each with the verifier
     db/                           SQLite cache; schema.sql is versioned
     fpl/                          FPL API client and the models for its JSON
