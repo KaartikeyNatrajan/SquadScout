@@ -12,6 +12,7 @@ dependencies = [
     "grpcio>=1.66",
     "protobuf>=5.28",
     "pydantic-settings>=2.4",
+    "langchain-anthropic>=1.0",
 ]
 
 [dependency-groups]
