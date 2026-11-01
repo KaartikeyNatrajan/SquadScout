@@ -19,6 +19,8 @@ A typical run for "How has Saka been playing?":
 
 import re
 
+from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
@@ -77,8 +79,8 @@ def route_after_agent(state: AgentState) -> str:
         return "tools"
     # Plain text reply. If it promises a lookup it never made (and we haven't
     # nudged too often yet), send it back; otherwise it is the final answer.
-    text = last.content if isinstance(last.content, str) else ""
-    if PROMISE_PATTERN.search(text) and state.get("nudges", 0) < MAX_NUDGES:
+    # .text is the answer text only: Claude's replies also hold thinking blocks.
+    if PROMISE_PATTERN.search(last.text) and state.get("nudges", 0) < MAX_NUDGES:
         return "nudge"
     return END
 
@@ -92,17 +94,53 @@ def nudge_node(state: AgentState) -> dict:
     }
 
 
-def build_graph():
-    """Wire up the nodes and edges. Called once at server startup."""
+# Claude models that accept `fallbacks`: if a safety check declines a request,
+# Anthropic retries it on a suitable other model instead of returning a refusal.
+CLAUDE_FALLBACK_MODELS = {
+    "claude-opus-5-5",
+    "claude-opus-5",
+    "claude-fable-5-1",
+    "claude-sonnet-5-5",
+}
+
+REFUSAL_REPLY = "Sorry, I can't help with that request."
+
+
+def build_llm() -> BaseChatModel:
+    """The chat model the agent talks to, picked by LLM_PROVIDER."""
+    if settings.llm_provider == "anthropic":
+        options: dict = {}
+        if settings.anthropic_model in CLAUDE_FALLBACK_MODELS:
+            options = {
+                "betas": ["server-side-fallback-2026-07-01"],
+                "model_kwargs": {"fallbacks": "default"},
+            }
+        # Only pass the key if one is configured; otherwise the client reads
+        # ANTHROPIC_API_KEY from the environment. No temperature: current Claude
+        # models reject it (effort is the setting that matters instead).
+        key = settings.anthropic_api_key.get_secret_value()
+        return ChatAnthropic(
+            model=settings.anthropic_model,
+            max_tokens=settings.anthropic_max_tokens,
+            effort=settings.anthropic_effort,
+            **({"api_key": key} if key else {}),
+            **options,
+        )
     # vLLM speaks the same HTTP API as OpenAI, so the OpenAI client works as
-    # long as base_url points at vLLM. bind_tools attaches the tool schemas to
-    # every request, which is how the model learns which tools exist.
-    llm = ChatOpenAI(
+    # long as base_url points at vLLM.
+    return ChatOpenAI(
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
         model=settings.llm_model,
         temperature=settings.llm_temperature,
-    ).bind_tools(TOOLS)
+    )
+
+
+def build_graph():
+    """Wire up the nodes and edges. Called once at server startup."""
+    # bind_tools attaches the tool schemas to every request, which is how the
+    # model learns which tools exist.
+    llm = build_llm().bind_tools(TOOLS)
 
     # The model step. The system prompt is added on every call instead of being
     # stored in the state, so it can't pile up or get lost.
@@ -110,6 +148,10 @@ def build_graph():
         messages = [SystemMessage(SYSTEM_PROMPT), *state["messages"]]
         # response is an AIMessage: either text, or tool_calls, or both.
         response = await llm.ainvoke(messages)
+        # Claude's safety checks can decline a request (rare, and usually
+        # rescued by the fallback above); its reply is then empty.
+        if response.response_metadata.get("stop_reason") == "refusal":
+            response = AIMessage(REFUSAL_REPLY)
         return {"messages": [response]}
 
     graph = StateGraph(AgentState)

@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 _TOO_MANY_STEPS = (
     "The agent took too many steps without reaching an answer. Try a simpler question."
 )
-_AGENT_FAILED = "The agent failed (is vLLM running?). See the server log for details."
+_AGENT_FAILED = "The agent failed (is the model reachable?). See the server log for details."
 
 
 @asynccontextmanager
@@ -89,10 +89,11 @@ async def chat(req: ChatRequest) -> ChatResponse:
     except GraphRecursionError as err:
         logger.warning("chat stopped at the step limit: %s", err)
         raise HTTPException(status_code=504, detail=_TOO_MANY_STEPS) from err
-    except Exception as err:  # vLLM down or erroring, a bug in a node, ...
+    except Exception as err:  # model down or erroring, a bug in a node, ...
         logger.exception("chat failed")
         raise HTTPException(status_code=502, detail=_AGENT_FAILED) from err
-    return ChatResponse(reply=result["messages"][-1].content)
+    # .text, not .content: with Claude, content also holds thinking blocks.
+    return ChatResponse(reply=result["messages"][-1].text)
 
 
 @app.post("/chat/stream")
@@ -122,7 +123,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
                 elif kind == "on_tool_end":
                     yield _sse("tool_end", {"tool": event["name"]})
                 elif kind == "on_chat_model_stream":
-                    token = event["data"]["chunk"].content
+                    token = event["data"]["chunk"].text  # answer text only, no thinking
                     if token:
                         yield _sse("token", {"text": token})
         except GraphRecursionError as err:
