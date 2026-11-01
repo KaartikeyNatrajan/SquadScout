@@ -37,12 +37,13 @@ def upsert_bootstrap(store: Store, bootstrap: Bootstrap, now: datetime | None = 
         # team must already exist.
         conn.executemany(
             """
-            INSERT INTO teams (id, name, short_name)
-            VALUES (?, ?, ?)
+            INSERT INTO teams (id, code, name, short_name)
+            VALUES (?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
+                code = excluded.code,
                 name = excluded.name,
                 short_name = excluded.short_name""",
-            [(t.id, t.name, t.short_name) for t in bootstrap.teams],
+            [(t.id, t.code, t.name, t.short_name) for t in bootstrap.teams],
         )
 
         # Gameweeks ("events" in FPL). SQLite has no boolean type: True/False are stored as 1/0.
@@ -76,7 +77,7 @@ def upsert_bootstrap(store: Store, bootstrap: Bootstrap, now: datetime | None = 
         conn.executemany(
             """
             INSERT INTO players (
-                id, web_name, first_name, second_name, search_name, team_id, position,
+                id, code, web_name, first_name, second_name, search_name, team_id, position,
                 now_cost, total_points, form, selected_by_percent, status, news,
                 chance_of_playing_next_round,
                 minutes, starts, goals_scored, assists, clean_sheets, bonus,
@@ -88,8 +89,9 @@ def upsert_bootstrap(store: Store, bootstrap: Bootstrap, now: datetime | None = 
                 price_projection_0, price_projection_1, price_projection_2
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
+                code = excluded.code,
                 web_name = excluded.web_name,
                 first_name = excluded.first_name,
                 second_name = excluded.second_name,
@@ -131,6 +133,7 @@ def upsert_bootstrap(store: Store, bootstrap: Bootstrap, now: datetime | None = 
             [
                 (
                     p.id,
+                    p.code,
                     p.web_name,
                     p.first_name,
                     p.second_name,

@@ -7,6 +7,7 @@ else is answered from SQLite.
 
     players.py        SearchPlayers, FindPlayers
     fixtures.py       GetFixtures, GetPlayerFixtures
+    head_to_head.py   GetHeadToHead (past meetings of two clubs), and the summaries on fixtures
     stats.py          GetPlayerGameweekStats, GetPlayerRecentForm
     manager_team.py   GetManagerTeam
     transfers.py      GetTransferTrends, EvaluateTransfers, SuggestTransfers
@@ -20,6 +21,7 @@ message, which makes them easy to test without a network.
 """
 
 from fpl_data.handlers.fixtures import FixtureHandlers
+from fpl_data.handlers.head_to_head import HeadToHeadHandlers
 from fpl_data.handlers.manager_team import ManagerTeamHandlers
 from fpl_data.handlers.news import NewsHandlers
 from fpl_data.handlers.players import PlayerHandlers
@@ -34,6 +36,7 @@ class FplService(
     ManagerTeamHandlers,
     TransferHandlers,
     NewsHandlers,
+    HeadToHeadHandlers,
 ):
     """Everything the FplDataService RPCs do. Each handler group above is a
     class with the methods for its topic; this class combines them."""

@@ -70,6 +70,9 @@ class FplDataServicer(pb_grpc.FplDataServiceServicer):
     async def GetTransferTrends(self, request, context):
         return await self._call(context, self._service.get_transfer_trends, request)
 
+    async def GetHeadToHead(self, request, context):
+        return await self._call(context, self._service.get_head_to_head, request)
+
     async def GetPlayerNews(self, request, context):
         return await self._call(context, self._service.get_player_news, request)
 

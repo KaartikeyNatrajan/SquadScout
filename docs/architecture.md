@@ -134,7 +134,7 @@ What lives where:
 | Module / package | Files | Responsibility |
 |---|---|---|
 | `main.py`, `server.py` | | `main.py` opens the database, builds the refresher and manager loader, starts the gRPC server, runs the refresh timer, shuts down cleanly. `server.py` is the thin gRPC adapter: CamelCase RPC names → `FplService` methods, `ServiceError` → gRPC status, plus health check and reflection |
-| `handlers/` | `service.py` (start here), `base.py` shared helpers, `players.py`, `fixtures.py`, `stats.py`, `manager_team.py`, `transfers.py`, `news.py`, `projector.py` (gathers a player's data for the projection), `fixture_cache.py`, `convert.py`, `errors.py` | The 12 RPCs. Plain async methods: validate input, call the layers below, convert rows to protobuf, raise `ServiceError` with a gRPC code |
+| `handlers/` | `service.py` (start here), `base.py` shared helpers, `players.py`, `fixtures.py`, `stats.py`, `manager_team.py`, `transfers.py`, `news.py`, `head_to_head.py`, `projector.py` (gathers a player's data for the projection), `fixture_cache.py`, `convert.py`, `errors.py` | The 13 RPCs. Plain async methods: validate input, call the layers below, convert rows to protobuf, raise `ServiceError` with a gRPC code |
 | `refresh.py` | | Background downloads of bootstrap, fixtures and gameweek stats, with one freshness rule (`_if_stale`) |
 | `manager/` | `loader.py` downloading + saving, `rules.py` pure FPL rules | A manager's team: Free Hit revert, free-transfer count, chips left, selling prices (from price history); saved in SQLite until the next deadline |
 | `squad.py` | | The verifier: FPL squad rules, applying transfers, hit cost. Pure functions |
@@ -617,7 +617,7 @@ flowchart LR
     q7 --> gf
 ```
 
-All 12 RPCs:
+All 13 RPCs:
 
 | RPC | Answers | Data from |
 |---|---|---|
@@ -665,7 +665,7 @@ flowchart LR
     td --> fake --> client --> real --> tmp
 ```
 
-- `make test` runs 359 data-service tests and the 5 agent tests, with no network,
+- `make test` runs 383 data-service tests and the 5 agent tests, with no network,
   GPU or servers needed.
 - The saved data was chosen to cover tricky cases: team 1 played a **Free Hit**
   the week before; team 6 has **3 Arsenal and 3 Chelsea players** (so buying
@@ -716,6 +716,31 @@ flowchart LR
   players right in every kept story. Known misses are listed by running the script.
 - **Later**: an optional LLM step could fill nullable fields (status, expected return,
   certainty) when a stronger model is available; nothing in the schema blocks it.
+
+## 10c. Head to head: past seasons
+
+FPL's API only has the current season. Past results come from an archive of
+FPL's own data, which keeps every season in FPL's format, so one piece of code
+(`history/results.py`) turns both into results with scorers.
+
+```mermaid
+flowchart LR
+    A["vaastav archive on GitHub<br/>teams.csv, players_raw.csv, fixtures.csv<br/>per season"] -->|"history/archive.py<br/>once per past season"| R["history/results.py<br/>stats -> goals, assists, own goals,<br/>penalties, red cards"]
+    F["FPL /fixtures/<br/>(with stats)"] -->|"refresh.py, hourly<br/>current season"| R
+    R --> DB[("match_results<br/>match_events<br/>keyed by club/player code")]
+    DB --> H["head_to_head.py<br/>record, summary line,<br/>who scored"]
+    H --> RPC["GetHeadToHead<br/>+ head_to_head on<br/>GetFixtures / GetPlayerFixtures"]
+```
+
+- **Linking seasons.** Team and player `id`s change every season (team ids are
+  alphabetical, so a promotion shifts them). FPL's `code` doesn't, so results are
+  stored by code, with the name as FPL spelled it that season.
+- **Seasons kept.** The current one plus the 5 before it (`history/seasons.PAST_SEASONS`).
+  The current season is worked out from the stored fixtures, not the clock.
+- **Coverage note.** `GetHeadToHead.note` says when a past season hasn't been
+  downloaded yet, or a club wasn't in the Premier League that season, so a short
+  record isn't mistaken for a full one.
+- **Limits.** Premier League only; no goal minutes (FPL doesn't record them).
 
 ## 11. Porting notes: Go to Python
 

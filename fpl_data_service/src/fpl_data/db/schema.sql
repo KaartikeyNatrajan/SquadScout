@@ -20,7 +20,8 @@
 --   sync_log                <- written by every refresh above
 
 CREATE TABLE IF NOT EXISTS teams (
-    id          INTEGER PRIMARY KEY,  -- FPL's own team id (Arsenal = 1)
+    id          INTEGER PRIMARY KEY,  -- FPL's own team id (Arsenal = 1); changes between seasons
+    code        INTEGER NOT NULL,     -- the club's id in every season (Arsenal = 3)
     name        TEXT NOT NULL,
     short_name  TEXT NOT NULL
 );
@@ -45,7 +46,8 @@ CREATE TABLE IF NOT EXISTS chips (
 );
 
 CREATE TABLE IF NOT EXISTS players (
-    id                            INTEGER PRIMARY KEY,  -- FPL element id
+    id                            INTEGER PRIMARY KEY,  -- FPL element id; changes every season
+    code                          INTEGER NOT NULL,     -- the player's id in every season
     web_name                      TEXT NOT NULL,
     first_name                    TEXT NOT NULL,
     second_name                   TEXT NOT NULL,
@@ -182,6 +184,39 @@ CREATE TABLE IF NOT EXISTS transfer_snapshots (
 );
 
 CREATE INDEX IF NOT EXISTS idx_transfer_snapshots_taken_at ON transfer_snapshots (taken_at);
+
+-- Finished Premier League matches, this season and past ones (see history/),
+-- for head-to-head records. Clubs and players are identified by FPL's `code`,
+-- which, unlike `id`, stays the same from season to season. Names are as FPL
+-- spelled them that season. Past seasons never change; the current season is
+-- rewritten by every fixtures refresh.
+CREATE TABLE IF NOT EXISTS match_results (
+    season           TEXT NOT NULL,     -- "2024-25"
+    fixture_id       INTEGER NOT NULL,  -- FPL's id that season
+    kickoff_time     TEXT NOT NULL,     -- RFC 3339
+    home_team_code   INTEGER NOT NULL,
+    home_team_name   TEXT NOT NULL,
+    away_team_code   INTEGER NOT NULL,
+    away_team_name   TEXT NOT NULL,
+    home_score       INTEGER NOT NULL,
+    away_score       INTEGER NOT NULL,
+    PRIMARY KEY (season, fixture_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_match_results_teams ON match_results (home_team_code, away_team_code);
+
+-- Who scored, assisted, missed a penalty, was sent off... in each match.
+CREATE TABLE IF NOT EXISTS match_events (
+    season       TEXT NOT NULL,
+    fixture_id   INTEGER NOT NULL,
+    kind         TEXT NOT NULL,     -- goal, assist, own_goal, penalty_saved, penalty_missed, red_card
+    team_code    INTEGER NOT NULL,  -- the club he played for in the match
+    player_code  INTEGER NOT NULL,
+    player_name  TEXT NOT NULL,
+    count        INTEGER NOT NULL,
+    PRIMARY KEY (season, fixture_id, kind, player_code),
+    FOREIGN KEY (season, fixture_id) REFERENCES match_results (season, fixture_id)
+);
 
 -- News stories from outside FPL (RSS feeds; see news/). `snippet` is the text the
 -- language model will be shown, built when the story is saved so a request only

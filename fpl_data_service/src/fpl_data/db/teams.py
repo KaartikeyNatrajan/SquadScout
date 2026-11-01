@@ -12,12 +12,13 @@ class TeamRow:
     id: int
     name: str  # "Arsenal", "Man Utd", "Nott'm Forest"
     short_name: str  # "ARS", "MUN", "NFO"
+    code: int = 0  # the club's id in every season (ids change when clubs are promoted)
 
 
 def all_teams(store: Store) -> list[TeamRow]:
     """All stored teams in id order (20 in a season)."""
-    rows = store.conn.execute("SELECT id, name, short_name FROM teams ORDER BY id")
-    return [TeamRow(r["id"], r["name"], r["short_name"]) for r in rows]
+    rows = store.conn.execute("SELECT id, name, short_name, code FROM teams ORDER BY id")
+    return [TeamRow(r["id"], r["name"], r["short_name"], r["code"]) for r in rows]
 
 
 def team_exists(store: Store, team_id: int) -> bool:

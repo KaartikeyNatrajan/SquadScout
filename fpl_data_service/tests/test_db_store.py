@@ -99,7 +99,7 @@ def test_open_keeps_a_current_schema(tmp_path):
 def test_failed_transaction_saves_nothing(store):
     try:
         with store.transaction() as conn:
-            conn.execute("INSERT INTO teams (id, name, short_name) VALUES (1, 'A', 'A')")
+            conn.execute("INSERT INTO teams (id, code, name, short_name) VALUES (1, 3, 'A', 'A')")
             raise RuntimeError("boom")
     except RuntimeError:
         pass

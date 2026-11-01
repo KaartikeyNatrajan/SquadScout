@@ -59,6 +59,7 @@ async def test_every_rpc_in_the_proto_is_served(channel):
         "GetPlayerRecentForm": pb.GetPlayerRecentFormRequest(player_id=12),
         "GetTransferTrends": pb.GetTransferTrendsRequest(),
         "GetPlayerNews": pb.GetPlayerNewsRequest(player_id=1),
+        "GetHeadToHead": pb.GetHeadToHeadRequest(team_id=1, opponent_team_id=2),
         "GetTeamNews": pb.GetTeamNewsRequest(team_id=1),
         "GetManagerTeam": pb.GetManagerTeamRequest(team_id=6),
         "EvaluateTransfers": pb.EvaluateTransfersRequest(

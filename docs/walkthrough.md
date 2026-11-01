@@ -154,7 +154,7 @@ fpl_data_service/
 │   ├── main.py              wiring, refresh timer, shutdown
 │   ├── server.py            the gRPC server: CamelCase RPC names -> FplService
 │   ├── config.py            settings from environment variables
-│   ├── handlers/            the 12 RPCs, one module per topic (start with service.py)
+│   ├── handlers/            the 13 RPCs, one module per topic (start with service.py)
 │   ├── refresh.py           "is this data stale? then download and save it"
 │   ├── manager/             a manager's team: free transfers, chips, selling prices
 │   ├── squad.py             the verifier: FPL's squad rules
@@ -292,6 +292,8 @@ gameweeks and fixtures from the database and calls it.
 
 **`sentiment.py`**: what are other managers doing with this player? Every week hundreds of thousands of transfers happen; heavy buying usually means form or a good run of fixtures, heavy selling means injury or lost form. The raw counts mean little to a small language model, so this turns them into a sentence ("heavily bought: net +3.15% of all managers this gameweek (the most bought player)") and says whether a price rise or fall is coming. The database keeps a snapshot of everyone's transfer totals at each refresh, so the service can also say how many net transfers happened in the last 24 hours, even across a deadline (FPL's weekly counts restart at every deadline).
 
+**`history/` and `head_to_head.py`**: when Arsenal play Liverpool, it helps to know how their recent meetings went. FPL's API only knows the current season, so the five seasons before it are downloaded once from a public archive of FPL data on GitHub. Each match comes with FPL's own list of who scored, assisted, scored an own goal, missed or saved a penalty, or was sent off. Players and clubs get a new `id` every season, but FPL also gives each one a `code` that never changes, so a goal Saka scored in 2022 can be linked to today's Saka. `head_to_head.py` turns the meetings into a record ("W2 D5 L3, goals 13-17") from either club's side.
+
 **`news/`**: FPL's own injury text is brief and late, and it won't tell you that a manager said in a press conference that a player needs a rest. So once an hour the service downloads a few news feeds (BBC, Guardian, Sky, and a Google News search per club), and keeps the stories that mention a player or club *and* something about availability (injury, a doubt, a ban, rest, the line-up, a press conference). `matching.py` works out *which* players a story names, which is harder than it sounds (two players called Silva; "Mount" the player vs "problems mount"). `topics.py` tags what the story is about. Nothing here decides what a story *means*: the exact headline, source and age are saved (with a short snippet for the model) and the language model reads them. Stories are deleted after three days. `tests/news_eval.py` checks all this against 193 real headlines that were labeled by hand, so a change to the rules that makes things worse is caught.
 
 **`lineup.py`**: only 11 of a squad's 15 players score. This picks the best valid
@@ -309,7 +311,7 @@ make the top five. A test checks it finds the same best answer as a plain
 try-everything search. It does no database or network work, so the handler runs
 it in a worker thread.
 
-**Tests**: `make test` runs 359 tests for this service without the internet.
+**Tests**: `make test` runs 383 tests for this service without the internet.
 `tests/fake_fpl.py` is a fake FPL website (an `httpx.MockTransport`) that serves
 the saved files from `tests/testdata/`; the real code is pointed at it. Each
 test gets a fresh temporary database. `@pytest.mark.parametrize` runs one test

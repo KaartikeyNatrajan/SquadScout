@@ -94,3 +94,9 @@ def upcoming_fixtures(store: Store, team_id: int, limit: int = 0) -> list[Fixtur
         (team_id, team_id, sql_limit),
     ).fetchall()
     return [FixtureRow(**{**dict(r), "finished": bool(r["finished"])}) for r in rows]
+
+
+def first_kickoff(store: Store) -> str | None:
+    """The season's first kickoff time (RFC 3339), or None before fixtures are saved."""
+    row = store.conn.execute("SELECT MIN(kickoff_time) AS first FROM fixtures").fetchone()
+    return row["first"]

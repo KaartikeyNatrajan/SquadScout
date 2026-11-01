@@ -2,17 +2,22 @@
 
 Startup order: open the SQLite database -> download any stale FPL data ->
 start the gRPC server -> keep refreshing in the background until Ctrl+C.
+Alongside the FPL refresh, two side jobs run on their own timers: the news
+feeds (hourly) and the past seasons' results (downloaded once).
 """
 
 import asyncio
 import logging
 import signal
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 
 from fpl_data.config import Settings
 from fpl_data.db.store import Store
 from fpl_data.fpl.client import FplClient, RateLimitedError
 from fpl_data.handlers.service import FplService
+from fpl_data.history.archive import ArchiveClient
+from fpl_data.history.refresh import HistoryRefresher
 from fpl_data.manager.loader import Loader
 from fpl_data.news.client import new_http_client
 from fpl_data.news.refresh import NewsRefresher
@@ -63,20 +68,22 @@ async def refresh_forever(refresher: Refresher, wait: timedelta) -> None:
         wait = await refresh_all(refresher)
 
 
-# The news feeds are read on their own timer, apart from the FPL refresh, so a
-# broken feed never delays FPL data (or the other way round). NewsRefresher
-# skips the work unless its data is over an hour old.
-NEWS_CHECK_EVERY = timedelta(minutes=10)
+# News and past seasons have their own timers, apart from the FPL refresh, so a
+# broken news feed or archive never delays FPL data (or the other way round).
+# Each job skips the work when its data is fresh enough (news: under an hour
+# old; past seasons: already downloaded), so most runs only read sync_log.
+SIDE_JOBS_EVERY = timedelta(minutes=10)
 
 
-async def news_forever(news_refresher: NewsRefresher) -> None:
-    """Read the news feeds roughly hourly, until cancelled. Failures are only logged."""
+async def repeat_forever(name: str, job: Callable[[], Awaitable[object]]) -> None:
+    """Run `job` now and then every SIDE_JOBS_EVERY, until cancelled. Failures are
+    only logged: the next run is the retry."""
     while True:
         try:
-            await news_refresher.refresh()
+            await job()
         except Exception as err:
-            logger.warning("news refresh failed: %s", err)
-        await asyncio.sleep(NEWS_CHECK_EVERY.total_seconds())
+            logger.warning("%s failed: %s", name, err)
+        await asyncio.sleep(SIDE_JOBS_EVERY.total_seconds())
 
 
 async def run() -> None:
@@ -99,7 +106,15 @@ async def run() -> None:
     logger.info("fpl_data_service listening: addr=%s db=%s", settings.grpc_addr, settings.db_path)
     refresh_task = asyncio.create_task(refresh_forever(refresher, wait))
     news_http = new_http_client()
-    news_task = asyncio.create_task(news_forever(NewsRefresher(store, news_http)))
+    archive = ArchiveClient(settings.archive_base_url)
+    side_jobs = [
+        asyncio.create_task(
+            repeat_forever("news refresh", NewsRefresher(store, news_http).refresh)
+        ),
+        asyncio.create_task(
+            repeat_forever("past seasons download", HistoryRefresher(store, archive).refresh)
+        ),
+    ]
 
     # Wait for Ctrl+C (SIGINT) or SIGTERM (what Docker or `kill` send).
     stop = asyncio.Event()
@@ -110,8 +125,10 @@ async def run() -> None:
 
     logger.info("shutting down")
     refresh_task.cancel()
-    news_task.cancel()
+    for task in side_jobs:
+        task.cancel()
     await server.stop(grace=5)  # lets in-flight requests finish first
     await client.aclose()
     await news_http.aclose()
+    await archive.aclose()
     store.close()

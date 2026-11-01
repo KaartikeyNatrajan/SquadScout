@@ -37,6 +37,7 @@ Everything is Python (each service is its own `uv` project). The contract betwee
 | `GetPlayerGameweekStats` | A player's stats in one gameweek |
 | `GetFixtures` | A team's next fixtures, by team id or name ("Arsenal", "Man Utd", "ARS") |
 | `GetTransferTrends` | The most transferred in or out players this gameweek, with a plain-word explanation of the crowd's behaviour |
+| `GetHeadToHead` | Two clubs' Premier League meetings this season and the last five: every score, who scored, assisted and was sent off, the win/draw/loss record, and which of today's players scored or assisted in them. `GetFixtures` and `GetPlayerFixtures` also give a one-line summary per fixture |
 | `GetPlayerNews` | Recent press stories about a player (injury, fitness, rest, suspension, team news, press conferences) from BBC, Guardian, Sky and Google News, next to FPL's own `news` for him. Each has a ready-made snippet, source, age, link and topics |
 | `GetTeamNews` | The same for a club |
 | `GetManagerTeam` | A manager's squad by FPL team id: every player's outlook and projection, selling prices, bank, free transfers, chips left |
@@ -46,6 +47,8 @@ Everything is Python (each service is its own `uv` project). The contract betwee
 **What other managers are doing.** Every player comes with transfer sentiment: net transfers as a share of all managers, his rank among the most bought and sold, the last 24 hours (once the service has that much history), a sentence like *"heavily bought: net +3.15% of all managers this gameweek (the most bought player)"*, and whether his price is about to move (*"likely to rise within 2 price updates"*).
 
 **News from outside FPL.** FPL's `news` field is brief and late: it won't say that the manager hinted at a press conference that a player needs a rest. So once an hour the service reads three publisher RSS feeds and two Google News searches per club (injury, team news), keeps the stories that mention a player or club *and* an availability topic, and saves them for 3 days with the snippet the model will see. The rule is *code retrieves, the model interprets*: topics (`injury`, `fitness`, `return`, `suspension`, `rest`, `team_news`, `press_conference`) say what a story is about, never what it concludes. The wording, source and age are passed through, and `also_mentions` flags headlines naming several players. Matching was scored on 193 hand-labeled real headlines (`tests/testdata/news_eval*.json`): on 60 it hadn't been tuned on, 89% of kept stories were wanted, 93% of wanted stories were kept, and the players found were right in every kept story. Run `uv run python tests/news_eval.py [labels file]` in `fpl_data_service` to see the mistakes.
+
+**Head to head.** FPL's API only covers the current season, so past seasons come from a community archive of FPL's own data ([vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League), its licence is listed as "Other": fine for personal use, check before anything commercial). The five completed seasons are downloaded once in the background (~1,900 matches, about 10 s); this season's results come from the fixtures refresh. Clubs and players are linked across seasons by FPL's `code`, which unlike `id` never changes. Limits: Premier League matches only, and no goal minutes (FPL doesn't record them).
 
 **Projections.** FPL only publishes expected points for the next gameweek. We also estimate points over the next few gameweeks from a player's recent minutes and points, his availability, and how hard each opponent is (double gameweeks count twice, blank ones zero). It is a rough guide: in a backtest on real gameweeks it was unbiased and modestly better than "his recent average" (details in `src/fpl_data/projection.py`).
 
@@ -119,12 +122,14 @@ fpl_data_service/
   src/fpl_data/
     main.py                       wiring, startup + timed refresh, graceful shutdown
     server.py                     the gRPC server (CamelCase RPC names -> FplService)
-    handlers/                     the 12 RPCs, one module per topic (start with service.py)
+    handlers/                     the 13 RPCs, one module per topic (start with service.py)
     refresh.py                    "is this data stale? then download and save it"
     manager/                      a manager's team (free transfers, chips, selling prices), saved until the deadline
     squad.py                      the verifier: FPL squad rules and transfer checks
     lineup.py                     the best starting eleven of a squad (only 11 of 15 score)
     projection.py                 expected points over the next few gameweeks
+    history/                      past seasons' results (archive download, FPL stats -> scorers)
+    head_to_head.py               win/draw/loss records and summaries from those results
     news/                         RSS feeds -> stories about players and clubs (read hourly, kept 3 days)
     sentiment.py                  transfer activity and price-change outlook, in plain words
     optimizer.py                  transfer search: tries 1-3 swaps, checks each with the verifier

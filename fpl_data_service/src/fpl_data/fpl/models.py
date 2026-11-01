@@ -27,7 +27,8 @@ class PriceProjection(BaseModel):
 class Element(BaseModel):
     """FPL's name for a player."""
 
-    id: int
+    id: int  # changes every season
+    code: int  # the same player's id in every season
     web_name: str
     first_name: str
     second_name: str
@@ -68,7 +69,8 @@ class Element(BaseModel):
 class Team(BaseModel):
     """One Premier League club."""
 
-    id: int
+    id: int  # 1-20 in alphabetical order, so it changes when clubs are promoted
+    code: int  # the same club's id in every season (Arsenal = 3)
     name: str
     short_name: str
 
@@ -122,6 +124,22 @@ class Fixture(BaseModel):
     finished: bool
     team_h_score: int | None  # null until the match starts
     team_a_score: int | None
+    # Who scored, assisted, was sent off...: one entry per kind of event.
+    stats: list["FixtureStat"] = []
+
+
+class StatValue(BaseModel):
+    element: int  # the player (this season's id)
+    value: int  # how many, e.g. 2 goals
+
+
+class FixtureStat(BaseModel):
+    """One kind of match event ("goals_scored", "assists", "own_goals", ...),
+    for each side: h = home team's players, a = away team's players."""
+
+    identifier: str
+    h: list[StatValue]
+    a: list[StatValue]
 
 
 # ---- /event/{gw}/live/ ----------------------------------------------------

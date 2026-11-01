@@ -1,6 +1,6 @@
 # Calling the data service from Postman
 
-The data service speaks gRPC on `localhost:50051`, so use Postman's **New → gRPC**
+The data service speaks gRPC (13 RPCs) on `localhost:50051`, so use Postman's **New → gRPC**
 request (not an HTTP request). Postman cannot import a gRPC collection from a JSON
 file, so this page lists the method and a ready-to-paste message for each RPC.
 
@@ -27,6 +27,7 @@ manager team ids 1 and 6 work with the test snapshot. Enums are written as names
 | GetPlayerGameweekStats | `{"player_id": 12, "gameweek": 3}` |
 | GetFixtures | `{"team_name": "Arsenal", "next_n": 3}` |
 | GetTransferTrends | `{"direction": "TRANSFER_DIRECTION_IN", "limit": 5}` |
+| GetHeadToHead | `{"team_name": "Arsenal", "opponent_team_name": "Liverpool", "seasons": 5}` |
 | GetPlayerNews | `{"player_id": 12, "limit": 3, "hours": 72}` |
 | GetTeamNews | `{"team_name": "Man City", "limit": 5}` |
 | GetManagerTeam | `{"team_id": 6}` |

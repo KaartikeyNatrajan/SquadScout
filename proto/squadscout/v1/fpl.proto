@@ -43,6 +43,11 @@ service FplDataService {
   // a chosen measure. For finding transfer targets.
   rpc FindPlayers(FindPlayersRequest) returns (FindPlayersResponse);
 
+  // Past Premier League meetings between two clubs (this season and the last
+  // five): scores, scorers, assists, red cards, a win/draw/loss record, and which
+  // of today's players scored or assisted in them.
+  rpc GetHeadToHead(GetHeadToHeadRequest) returns (GetHeadToHeadResponse);
+
   // The most transferred in (or out) players for the next gameweek.
   rpc GetTransferTrends(GetTransferTrendsRequest) returns (GetTransferTrendsResponse);
 
@@ -170,6 +175,10 @@ message Fixture {
   // "optional" lets the reader tell "not set" (match not played) apart from 0.
   optional int32 home_score = 11;
   optional int32 away_score = 12;
+  // Past meetings in one line, from the home team's side, e.g. "last 6 PL meetings
+  // since 2021-22: W3 D1 L2, goals 9-7; last: W 2-1 at home (2026-02-12)".
+  // Only filled by GetFixtures, for unplayed fixtures.
+  string head_to_head = 13;
 }
 
 message GetFixturesRequest {
@@ -194,6 +203,9 @@ message PlayerFixture {
   string opponent_team_name = 5;
   bool is_home = 6;
   int32 difficulty = 7;     // FDR 1 (easy) - 5 (hard) for the player's team
+  // Past meetings in one line, from the player's team's side (see
+  // Fixture.head_to_head). Only filled by GetPlayerFixtures.
+  string head_to_head = 8;
 }
 
 message GetPlayerFixturesRequest {
@@ -374,6 +386,74 @@ message GetTransferTrendsRequest {
 message GetTransferTrendsResponse {
   int32 gameweek = 1;  // the gameweek these transfers are being made for
   repeated PlayerOutlook players = 2;  // most transferred first
+}
+
+// ---------- Head to head ----------
+
+message GetHeadToHeadRequest {
+  // The two clubs, each by id or name ("Arsenal", "Man City", "LIV").
+  int32 team_id = 1;
+  string team_name = 2;
+  int32 opponent_team_id = 3;
+  string opponent_team_name = 4;
+  // Completed seasons to include besides the current one; 0 = 5; at most 5.
+  int32 seasons = 5;
+}
+
+// Something a player did in a match. Taken from FPL's match stats, so there are
+// no minutes: FPL doesn't record when goals were scored.
+message MatchEvent {
+  string kind = 1;         // goal, assist, own_goal, penalty_saved, penalty_missed, red_card
+  string player_name = 2;  // as FPL called him that season, e.g. "Salah"
+  string team_name = 3;    // the club he played for in that match
+  int32 count = 4;         // e.g. 2 for two goals
+  // His player id today, if he's still in the Premier League; 0 if not.
+  int32 player_id = 5;
+}
+
+message HeadToHeadMatch {
+  string season = 1;        // "2024-25"
+  string kickoff_time = 2;  // RFC 3339
+  string home_team_name = 3;
+  string away_team_name = 4;
+  int32 home_score = 5;
+  int32 away_score = 6;
+  bool team_at_home = 7;    // whether the requested team was at home
+  string result = 8;        // "W", "D" or "L" for the requested team
+  repeated MatchEvent events = 9;
+}
+
+message HeadToHeadRecord {
+  int32 played = 1;
+  int32 wins = 2;           // for the requested team
+  int32 draws = 3;
+  int32 losses = 4;
+  int32 goals_for = 5;
+  int32 goals_against = 6;
+}
+
+// A player at either club today who scored or assisted in these meetings
+// (perhaps for another club).
+message HeadToHeadPlayer {
+  int32 player_id = 1;
+  string web_name = 2;
+  string team_name = 3;     // his club today
+  int32 goals = 4;
+  int32 assists = 5;
+}
+
+message GetHeadToHeadResponse {
+  int32 team_id = 1;
+  string team_name = 2;
+  int32 opponent_team_id = 3;
+  string opponent_team_name = 4;
+  repeated string seasons = 5;            // the seasons searched, newest first
+  HeadToHeadRecord record = 6;
+  string summary = 7;                     // the record in a sentence
+  repeated HeadToHeadMatch matches = 8;   // newest first
+  repeated HeadToHeadPlayer players = 9;  // most goals + assists first
+  // Plain words on coverage, e.g. "Sunderland were not in the Premier League in 2023-24".
+  string note = 10;
 }
 
 // ---------- News ----------

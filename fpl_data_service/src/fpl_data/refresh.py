@@ -6,6 +6,7 @@ download:
 
     bootstrap   teams, gameweeks, chips, players   GET /bootstrap-static/
     fixtures    every fixture of the season        GET /fixtures/
+                (and this season's results, with scorers, for head-to-head records)
     gameweeks   every player's stats, per week     GET /event/{gw}/live/
 
 Each is skipped if sync_log says it was saved recently enough.
@@ -15,10 +16,11 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 
-from fpl_data.db import fixtures, gameweeks, player_gameweeks, sync_log
+from fpl_data.db import fixtures, gameweeks, player_gameweeks, results, sync_log
 from fpl_data.db.bootstrap import upsert_bootstrap
 from fpl_data.db.store import Store
 from fpl_data.fpl.client import FplClient
+from fpl_data.history.results import to_results
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +70,12 @@ class Refresher:
         async def download() -> None:
             data = await self.client.fetch_fixtures()
             fixtures.upsert_fixtures(self.store, data)
-            logger.info("fixtures refreshed: fixtures=%d", len(data))
+            # The finished ones, with their stats, are this season's results.
+            lookups = results.current_lookups(self.store)
+            played = to_results(data, lookups.clubs, lookups.people)
+            if played:
+                results.save_season(self.store, played[0].season, played)
+            logger.info("fixtures refreshed: fixtures=%d results=%d", len(data), len(played))
 
         await self._if_stale(sync_log.FIXTURES, self.max_age, download)
 
