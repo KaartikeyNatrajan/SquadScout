@@ -71,14 +71,9 @@ client --HTTP/SSE :8080--> langgraph_service (FastAPI + LangGraph, Python)
 - The graph has a `nudge` node: a reply with no tool calls that promises a lookup ("let me fetch...") is sent back once (`MAX_NUDGES = 1`). It doesn't reliably help: Qwen2.5-3B tends to repeat the promise, and `/chat/stream` streams both drafts. Likely cause was `status: "a"` being opaque; `Player.availability` and `news` now spell it out, but the agent hasn't been re-tested with them.
 - Regression tests for the agent: "How has Saka been playing?" and "How is Odegaard doing?".
 
-## Next tasks (in order)
+## Next tasks
 
-1. **Agent tools** for `GetManagerTeam`, `FindPlayers`, `EvaluateTransfers`, `SuggestTransfers`, `GetTransferTrends`, `GetPlayerRecentForm`, `GetPlayerFixtures` (and `team_name` for `get_fixtures`). Format results compactly instead of dumping JSON: a `GetManagerTeam` response is far too big for the 4096-token context (15 players x ~30 fields + fixtures + projection). Raise `GRPC_TIMEOUT_S` (5 s): a team's first `GetManagerTeam` takes ~2-3 s live (6-9 FPL requests, in parallel), later ones are instant until the deadline.
-2. **Fix the nudge**: buffer each turn's tokens in `/chat/stream` and only send the final one; strip a trailing "let me ..." sentence as a fallback.
-3. **Eval set**: 10-20 questions (the five manager questions in README, player questions, an off-topic one) run against the live stack. Check: the right tools and arguments; numbers in the answer appear in tool output; nothing invented; off-topic refused.
-4. **Data service follow-ups**: a lineup-aware captain pick (who to captain, using projections); a Dockerfile; season rollover (player ids change each summer); a test snapshot with a real double gameweek; consider a PuLP/OR-Tools model if the search ever needs more than 3 transfers.
-5. Try `Qwen/Qwen3-4B-AWQ` (`VLLM_MAX_MODEL_LEN=3072`), passing `extra_body={"chat_template_kwargs": {"enable_thinking": False}}` to `ChatOpenAI`. Compare with the eval set.
-6. Later: streaming UI, resilience tests (kill the data service mid-query), docker-compose (vLLM stays on the host).
+The prioritised task list lives in `next_steps.md` (keep it there, not here).
 
 ## Working style
 

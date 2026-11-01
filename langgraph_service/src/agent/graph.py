@@ -123,6 +123,8 @@ def build_llm() -> BaseChatModel:
             model=settings.anthropic_model,
             max_tokens=settings.anthropic_max_tokens,
             effort=settings.anthropic_effort,
+            default_request_timeout=settings.llm_timeout_s,
+            max_retries=1,
             **({"api_key": key} if key else {}),
             **options,
         )
@@ -133,6 +135,8 @@ def build_llm() -> BaseChatModel:
         api_key=settings.llm_api_key,
         model=settings.llm_model,
         temperature=settings.llm_temperature,
+        timeout=settings.llm_timeout_s,
+        max_retries=1,
     )
 
 

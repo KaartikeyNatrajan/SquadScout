@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     anthropic_effort: Literal["low", "medium", "high", "xhigh", "max"] = "medium"
     anthropic_max_tokens: int = 16000  # cap on one reply (thinking included)
 
+    # The longest one model call may take before it fails with an error. Without
+    # it, a model that isn't running (vLLM not started) makes /chat hang for many
+    # minutes instead of failing. Generous, because Claude may think before answering.
+    llm_timeout_s: float = 120.0
+
     # Graph safety valve: max agent<->tool hops before LangGraph aborts
     graph_recursion_limit: int = 12
 

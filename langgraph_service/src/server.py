@@ -41,6 +41,14 @@ async def lifespan(app: FastAPI):
     # Building the graph once and storing it on app.state means every request
     # reuses the same compiled graph.
     app.state.graph = build_graph()
+    # Which model answers is set in .env (LLM_PROVIDER); say so, since a wrong
+    # setting otherwise only shows up as failing chats.
+    if settings.llm_provider == "anthropic":
+        logger.info(
+            "model: Claude (%s, effort %s)", settings.anthropic_model, settings.anthropic_effort
+        )
+    else:
+        logger.info("model: vLLM at %s (%s)", settings.llm_base_url, settings.llm_model)
     yield
     await close_channel()  # close the gRPC connection to the data service
 
