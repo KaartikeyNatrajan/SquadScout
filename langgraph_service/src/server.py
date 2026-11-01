@@ -12,17 +12,27 @@ gRPC, the server can work on other requests.
 """
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
+from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel, Field
 
 from agent.graph import build_graph
 from agent.tools import close_channel
 from config import settings
+
+logger = logging.getLogger(__name__)
+
+# What the client is told when the agent can't finish. The details go to the log.
+_TOO_MANY_STEPS = (
+    "The agent took too many steps without reaching an answer. Try a simpler question."
+)
+_AGENT_FAILED = "The agent failed (is vLLM running?). See the server log for details."
 
 
 @asynccontextmanager
@@ -32,7 +42,7 @@ async def lifespan(app: FastAPI):
     # reuses the same compiled graph.
     app.state.graph = build_graph()
     yield
-    await close_channel()  # close the gRPC connection to the Go service
+    await close_channel()  # close the gRPC connection to the data service
 
 
 app = FastAPI(title="Squad Scout", version="0.1.0", lifespan=lifespan)
@@ -74,7 +84,14 @@ async def chat(req: ChatRequest) -> ChatResponse:
     """Run the graph to completion and return only the final answer."""
     # ainvoke runs the whole graph (model -> tools -> model ...) to the end and
     # returns the final state. The last message in it is the model's answer.
-    result = await app.state.graph.ainvoke(_initial_state(req), config=_run_config())
+    try:
+        result = await app.state.graph.ainvoke(_initial_state(req), config=_run_config())
+    except GraphRecursionError as err:
+        logger.warning("chat stopped at the step limit: %s", err)
+        raise HTTPException(status_code=504, detail=_TOO_MANY_STEPS) from err
+    except Exception as err:  # vLLM down or erroring, a bug in a node, ...
+        logger.exception("chat failed")
+        raise HTTPException(status_code=502, detail=_AGENT_FAILED) from err
     return ChatResponse(reply=result["messages"][-1].content)
 
 
@@ -89,19 +106,31 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
     # Note: this forwards tokens from EVERY model call, including a reply that
     # the nudge node later sends back, so the client can see two drafts.
 
+    # The HTTP status (200) is sent before the graph runs, so a failure part-way
+    # can't change it: it's reported as an "error" event, and "done" always ends
+    # the stream so the client knows to stop waiting.
     async def events() -> AsyncIterator[str]:
-        async for event in app.state.graph.astream_events(
-            _initial_state(req), config=_run_config(), version="v2"
-        ):
-            kind = event["event"]
-            if kind == "on_tool_start":
-                yield _sse("tool_start", {"tool": event["name"], "input": event["data"].get("input")})
-            elif kind == "on_tool_end":
-                yield _sse("tool_end", {"tool": event["name"]})
-            elif kind == "on_chat_model_stream":
-                token = event["data"]["chunk"].content
-                if token:
-                    yield _sse("token", {"text": token})
+        try:
+            async for event in app.state.graph.astream_events(
+                _initial_state(req), config=_run_config(), version="v2"
+            ):
+                kind = event["event"]
+                if kind == "on_tool_start":
+                    yield _sse(
+                        "tool_start", {"tool": event["name"], "input": event["data"].get("input")}
+                    )
+                elif kind == "on_tool_end":
+                    yield _sse("tool_end", {"tool": event["name"]})
+                elif kind == "on_chat_model_stream":
+                    token = event["data"]["chunk"].content
+                    if token:
+                        yield _sse("token", {"text": token})
+        except GraphRecursionError as err:
+            logger.warning("chat stream stopped at the step limit: %s", err)
+            yield _sse("error", {"message": _TOO_MANY_STEPS})
+        except Exception:
+            logger.exception("chat stream failed")
+            yield _sse("error", {"message": _AGENT_FAILED})
         yield _sse("done", {})
 
     return StreamingResponse(events(), media_type="text/event-stream")

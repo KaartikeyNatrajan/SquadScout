@@ -36,35 +36,38 @@ def title_key(title: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", names.normalize(title)))
 
 
-def build_snippet(title: str, summary: str, focus: list[str]) -> str:
+def build_snippet(title: str, summary: str, players: list[str], words: list[str]) -> str:
     """The text the model is shown for a story: the headline, and when the feed gave a
     summary, the one sentence of it most worth reading. At most SNIPPET_LENGTH
     characters, cut at a word boundary.
 
-    `focus` are words that make a sentence worth reading: the names of the players
-    mentioned and the topic words found. The sentence with the most of them is used
-    (the first one if none has any).
+    The sentence chosen is the one naming the most of `players` (the player names the
+    story was matched on); ties go to the one with the most topic `words`, then to the
+    earliest. With no summary, or no sentence beyond the headline, it's the headline.
     """
     title = title.strip().rstrip(".")
-    sentence = _best_sentence(summary, focus, avoid=title)
+    sentence = _best_sentence(summary, players, words, avoid=title)
     text = f"{title}. {sentence}" if sentence else title
     return _truncate(text, SNIPPET_LENGTH)
 
 
-def _best_sentence(summary: str, focus: list[str], avoid: str) -> str:
+def _best_sentence(summary: str, players: list[str], words: list[str], avoid: str) -> str:
     sentences = [s.strip() for s in _SENTENCES.split(summary) if s.strip()]
     # A summary that just repeats the headline adds nothing.
     sentences = [s for s in sentences if names.normalize(avoid)[:40] not in names.normalize(s)]
     if not sentences:
         return ""
-    words = [names.normalize(w) for w in focus if w]
 
-    def score(sentence: str) -> int:
+    def hits(sentence: str, terms: list[str]) -> int:
         normalized = names.normalize(sentence)
-        return sum(1 for w in words if re.search(rf"(?<![a-z0-9]){re.escape(w)}", normalized))
+        return sum(
+            1
+            for t in terms
+            if t and re.search(rf"(?<![a-z0-9]){re.escape(names.normalize(t))}", normalized)
+        )
 
-    best = max(sentences, key=score)  # max returns the first of equals, so ties favour the earliest
-    return best if score(best) > 0 else sentences[0]
+    # max() returns the first of equals, so ties favour the earliest sentence.
+    return max(sentences, key=lambda s: (hits(s, players), hits(s, words)))
 
 
 def _truncate(text: str, limit: int) -> str:

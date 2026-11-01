@@ -1,4 +1,4 @@
-"""Smoke tests that need neither vLLM nor the Go service running."""
+"""Smoke tests that need neither vLLM nor the data service running."""
 
 from fastapi.testclient import TestClient
 

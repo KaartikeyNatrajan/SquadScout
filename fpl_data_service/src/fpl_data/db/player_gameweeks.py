@@ -17,9 +17,11 @@ class MatchRow:
     """One match from the player's side."""
 
     fixture_id: int
-    opponent_team_id: int
-    opponent_team_name: str
-    was_home: bool
+    # The next three are None when we don't know which side he played for (he
+    # has changed club since; see schema.sql).
+    opponent_team_id: int | None
+    opponent_team_name: str | None
+    was_home: bool | None
     kickoff_time: str
     team_score: int | None  # his club's goals; None if the match hasn't started
     opponent_score: int | None
@@ -62,10 +64,25 @@ def upsert_gameweek_stats(store: Store, gameweek: int, live: EventLive) -> None:
     visible only when the transaction commits.
     """
     with store.transaction() as conn:
-        # Each player's club right now, to record which side of each fixture he
-        # was on. (FPL's live data doesn't say.)
+        # Which side of each fixture a player was on. FPL's live data doesn't say,
+        # so: the club recorded when this gameweek was first saved, if it was;
+        # otherwise his current club, if it played in that fixture; otherwise unknown.
         clubs = {
             row["id"]: row["team_id"] for row in conn.execute("SELECT id, team_id FROM players")
+        }
+        recorded = {
+            (row["player_id"], row["fixture_id"]): row["team_id"]
+            for row in conn.execute(
+                "SELECT player_id, fixture_id, team_id FROM player_gameweek_matches WHERE gameweek = ?",
+                (gameweek,),
+            )
+        }
+        sides = {
+            row["id"]: (row["home_team_id"], row["away_team_id"])
+            for row in conn.execute(
+                "SELECT id, home_team_id, away_team_id FROM fixtures WHERE gameweek = ?",
+                (gameweek,),
+            )
         }
 
         # Matches first: they reference the gameweek rows.
@@ -106,7 +123,11 @@ def upsert_gameweek_stats(store: Store, gameweek: int, live: EventLive) -> None:
                 )
             )
             for m in p.explain:
-                match_rows.append((p.id, gameweek, m.fixture, club, m.minutes(), m.points()))
+                if (p.id, m.fixture) in recorded:
+                    side = recorded[(p.id, m.fixture)]
+                else:
+                    side = club if club in sides.get(m.fixture, ()) else None
+                match_rows.append((p.id, gameweek, m.fixture, side, m.minutes(), m.points()))
 
         conn.executemany(
             """
@@ -166,14 +187,16 @@ def _query(store: Store, player_id: int, sql: str, params: tuple) -> list[Player
     return weeks
 
 
-# One player's matches in the given gameweeks, from his side. The "sides" step
+# One player's matches in the given gameweeks, from his side. When his side is
+# unknown (team_id NULL), was_home and the opponent come back NULL and the
+# scores are given home-first. The "sides" step
 # (a CTE: a named sub-query used by the main query) works out once whether he
 # was the home team; the main query then uses that to pick his opponent and
 # order the score his way round. IIF(x, a, b) is SQLite's "if x then a else b".
 _MATCH_SELECT = """
     WITH sides AS (
         SELECT m.gameweek, m.fixture_id, m.minutes, m.total_points,
-               f.home_team_id = m.team_id AS was_home,
+               IIF(m.team_id IS NULL, NULL, f.home_team_id = m.team_id) AS was_home,
                f.home_team_id, f.away_team_id, f.home_score, f.away_score,
                COALESCE(f.kickoff_time, '') AS kickoff_time
         FROM player_gameweek_matches m
@@ -181,12 +204,12 @@ _MATCH_SELECT = """
         WHERE m.player_id = ? AND m.gameweek IN ({gameweeks})
     )
     SELECT gameweek, fixture_id, minutes, total_points, was_home,
-           IIF(was_home, away_team_id, home_team_id) AS opponent_team_id,
+           IIF(was_home IS NULL, NULL, IIF(was_home, away_team_id, home_team_id)) AS opponent_team_id,
            t.name AS opponent_team_name, kickoff_time,
-           IIF(was_home, home_score, away_score) AS team_score,
-           IIF(was_home, away_score, home_score) AS opponent_score
+           IIF(COALESCE(was_home, 1), home_score, away_score) AS team_score,
+           IIF(COALESCE(was_home, 1), away_score, home_score) AS opponent_score
     FROM sides
-    JOIN teams t ON t.id = IIF(was_home, away_team_id, home_team_id)
+    LEFT JOIN teams t ON t.id = IIF(was_home, away_team_id, home_team_id) AND was_home IS NOT NULL
     ORDER BY kickoff_time, fixture_id"""
 
 
@@ -203,7 +226,7 @@ def _attach_matches(store: Store, player_id: int, weeks: list[PlayerGameweekRow]
             fixture_id=r["fixture_id"],
             opponent_team_id=r["opponent_team_id"],
             opponent_team_name=r["opponent_team_name"],
-            was_home=bool(r["was_home"]),
+            was_home=None if r["was_home"] is None else bool(r["was_home"]),
             kickoff_time=r["kickoff_time"],
             team_score=r["team_score"],
             opponent_score=r["opponent_score"],

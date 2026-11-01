@@ -13,15 +13,13 @@ ordinary words. Rules, from most to least certain:
 """
 
 import re
-import unicodedata
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from fpl_data import names
+from fpl_data import names, team_names
 from fpl_data.db.players import PlayerRow
 from fpl_data.db.teams import TeamRow
-from fpl_data.news.feeds import TEAM_SEARCH_NAMES
 
 MIN_SURNAME_LENGTH = 4
 
@@ -31,19 +29,6 @@ COMMON_WORDS = frozenset(
     "white young king wood green brown gray grey cook march bell mount hall long "
     "gordon lewis wilson cash rice strand hill".split()
 )
-
-# Other names newspapers use for a club (besides its FPL name and search name).
-TEAM_NICKNAMES = {
-    "Man City": ["man city"],
-    "Man Utd": ["man utd", "man united"],
-    "Spurs": ["spurs", "tottenham"],
-    "Nott'm Forest": ["nott'm forest", "nottm forest"],
-    "Wolves": ["wolves", "wolverhampton"],
-    "Newcastle": ["newcastle"],
-    "Leeds": ["leeds"],
-    "Brighton": ["brighton"],
-}
-
 
 # Managers share first names with players ("Enzo" Maresca, "Enzo" Fernandez), so
 # their names are removed from a story before looking for players. Edit when managers change.
@@ -78,20 +63,11 @@ MANAGERS = [
 PLACES = ["old trafford", "st james park", "king power", "villa park", "turf moor", "selhurst park"]
 
 
-def _fold_accents(text: str) -> str:
-    """Strip accents but keep the capitals ("Dedić" -> "Dedic")."""
-    decomposed = unicodedata.normalize("NFD", text)
-    return "".join(c for c in decomposed if unicodedata.category(c) != "Mn")
-
-
 def _capitalised(word: str, folded_text: str) -> bool:
-    """Whether `word` appears in the text written like a name: "Saka" or "SAKA"."""
-    return bool(
-        re.search(
-            rf"(?<![A-Za-z])(?:{re.escape(word.capitalize())}|{re.escape(word.upper())})(?![A-Za-z])",
-            folded_text,
-        )
-    )
+    """Whether `word` (lowercase, accent-free) appears in the text written like a
+    name, starting with a capital: "Saka", "SAKA", "McGinn", "Ødegaard"."""
+    pattern = rf"(?<![A-Za-z]){re.escape(word)}(?![A-Za-z])"
+    return any(m.group(0)[0].isupper() for m in re.finditer(pattern, folded_text, re.IGNORECASE))
 
 
 def tokens(text: str) -> list[str]:
@@ -107,6 +83,7 @@ def _phrase(text: str) -> str:
 class Match:
     player_ids: list[int]
     team_ids: list[int]
+    names: list[str]  # the player names found, as written in lowercase (for the snippet)
 
 
 class Matcher:
@@ -115,9 +92,7 @@ class Matcher:
     def __init__(self, players: Sequence[PlayerRow], teams: Sequence[TeamRow]):
         self._team_phrases: dict[str, int] = {}
         for team in teams:
-            variants = [team.name, TEAM_SEARCH_NAMES.get(team.name, team.name)]
-            variants += TEAM_NICKNAMES.get(team.name, [])
-            for variant in variants:
+            for variant in team_names.all_names(team.name):
                 self._team_phrases[_phrase(variant)] = team.id
 
         self._team_of = {p.id: p.team_id for p in players}
@@ -151,34 +126,36 @@ class Matcher:
         self._order = sorted(set(self._strong) | set(weak), key=lambda k: (-len(k.split()), k))
 
     def find(self, text: str, feed_team_id: int | None = None) -> Match:
-        folded = _fold_accents(text)
-        padded = f" {_phrase(text)} "
+        """The players and clubs `text` mentions. `feed_team_id` is the club whose
+        search feed the story came from, if any: it counts as team context."""
+        folded = names.fold(text)  # for checking capitals
+        padded = (
+            f" {_phrase(text)} "  # lowercase words with a space at each end, for whole-word search
+        )
         for phrase in [*MANAGERS, *PLACES]:
             padded = padded.replace(f" {phrase} ", " ")
 
         teams = {tid for phrase, tid in self._team_phrases.items() if f" {phrase} " in padded}
-        context = set(teams)
         if feed_team_id is not None:
-            context.add(feed_team_id)
+            teams.add(feed_team_id)
 
         players: set[int] = set()
-        for key in self._order:
+        found_names: list[str] = []
+        for key in self._order:  # longest first
             needle = f" {key} "
             if needle not in padded:
                 continue
             if key in self._strong:
-                players.add(self._strong[key])
+                found = {self._strong[key]}
+            elif " " not in key and not _capitalised(key, folded):
+                continue  # "problems mount", "lucky": an ordinary word, not a name
             else:
-                if " " not in key and not _capitalised(key, folded):
-                    continue  # "problems mount", "lucky": an ordinary word, not a name
-                found = self._resolve(key, self._weak[key], context)
+                found = self._resolve(key, self._weak[key], teams)
+            if found:
                 players |= found
-            padded = padded.replace(needle, " ")
-
-        team_ids = set(teams)
-        if feed_team_id is not None:
-            team_ids.add(feed_team_id)
-        return Match(sorted(players), sorted(team_ids))
+                found_names.append(key)
+            padded = padded.replace(needle, " ")  # so shorter names inside it aren't found again
+        return Match(sorted(players), sorted(teams), found_names)
 
     def _resolve(self, key: str, candidates: set[int], context: set[int]) -> set[int]:
         """Which player(s) a surname found in a story refers to."""

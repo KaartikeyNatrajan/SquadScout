@@ -245,6 +245,8 @@ message GameweekStats {
 
   // Each match his team played this gameweek, with his minutes and points in it.
   repeated MatchResult match_results = 24;
+  // True when the single match's side is unknown (see MatchResult.side_unknown).
+  bool side_unknown = 25;
 }
 
 // One match from a player's side.
@@ -258,6 +260,10 @@ message MatchResult {
   optional int32 opponent_score = 7;
   int32 minutes = 8;                 // 0 if he didn't play
   int32 total_points = 9;            // his FPL points in this match
+  // True when we don't know which club he played for: he has moved club since and
+  // this gameweek was first saved after the move. Then opponent_team_id is 0,
+  // opponent_team_name and was_home are empty/false, and the scores are home-first.
+  bool side_unknown = 10;
 }
 
 message GetPlayerGameweekStatsRequest {

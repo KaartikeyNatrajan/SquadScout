@@ -8,7 +8,7 @@ from pathlib import Path
 _SCHEMA = (Path(__file__).parent / "schema.sql").read_text(encoding="utf-8")
 
 # Must be increased whenever schema.sql changes. See _reset_if_outdated.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # Every table this service has ever created, children before parents, so
 # dropping them in this order never breaks a REFERENCES rule. Keep old names

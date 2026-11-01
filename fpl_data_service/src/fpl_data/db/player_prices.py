@@ -7,12 +7,20 @@ from fpl_data.db.store import Store
 
 def save_prices(store: Store, player_id: int, prices: Iterable[tuple[int, int]]) -> None:
     """Save a player's price history, given as (gameweek, price in tenths of £m) pairs.
-    Saving a player again simply replaces his rows."""
+    Saving a player again simply replaces his rows.
+
+    FPL's history has one entry per *match*, so a double gameweek lists the same
+    gameweek twice. The first entry is kept: prices only change between
+    gameweeks, so both carry the same price.
+    """
+    by_gameweek: dict[int, int] = {}
+    for gameweek, price in prices:
+        by_gameweek.setdefault(gameweek, price)
     with store.transaction() as conn:
         conn.execute("DELETE FROM player_prices WHERE player_id = ?", (player_id,))
         conn.executemany(
             "INSERT INTO player_prices (player_id, gameweek, price) VALUES (?, ?, ?)",
-            [(player_id, gameweek, price) for gameweek, price in prices],
+            [(player_id, gameweek, price) for gameweek, price in by_gameweek.items()],
         )
 
 

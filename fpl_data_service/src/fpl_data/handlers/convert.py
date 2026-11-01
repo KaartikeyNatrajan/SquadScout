@@ -40,11 +40,17 @@ def round2(x: float) -> float:
     1.95, so sums are rounded before sending. (Python's own round() rounds
     halves to even, e.g. round(0.125, 2) == 0.12, which isn't what we want.)
     """
-    scaled = abs(x) * 100
+    return round_half_up(x, 2)
+
+
+def round_half_up(x: float, places: int) -> float:
+    """Round to `places` decimal places, halves away from zero (see round2)."""
+    factor = 10**places
+    scaled = abs(x) * factor
     whole = math.floor(scaled)
     if scaled - whole >= 0.5:
         whole += 1
-    return math.copysign(whole, x) / 100
+    return math.copysign(whole, x) / factor
 
 
 def to_player(p: PlayerRow, net_transfers_24h: int | None = None) -> pb.Player:
@@ -81,7 +87,7 @@ def to_player(p: PlayerRow, net_transfers_24h: int | None = None) -> pb.Player:
         price_change_event=pounds(p.cost_change_event),
         news_added=p.news_added,
         net_transfers_event=p.transfers_in_event - p.transfers_out_event,
-        net_transfers_percent=round(p.net_transfers_percent, 3),
+        net_transfers_percent=round_half_up(p.net_transfers_percent, 3),
         net_bought_rank=p.net_bought_rank,
         net_sold_rank=p.net_sold_rank,
         net_transfers_24h=net_transfers_24h,  # None stays unset
@@ -91,7 +97,7 @@ def to_player(p: PlayerRow, net_transfers_24h: int | None = None) -> pb.Player:
             p.net_bought_rank,
             p.net_sold_rank,
         ),
-        price_change_progress=round(p.price_change_progress, 1),
+        price_change_progress=round_half_up(p.price_change_progress, 1),
         price_change_outlook=sentiment.price_outlook(p.price_change_progress, p.price_projections),
     )
 
@@ -152,9 +158,10 @@ def to_gameweek_stats(g: PlayerGameweekRow) -> pb.GameweekStats:
         match_results=[
             pb.MatchResult(
                 fixture_id=m.fixture_id,
-                opponent_team_id=m.opponent_team_id,
-                opponent_team_name=m.opponent_team_name,
-                was_home=m.was_home,
+                opponent_team_id=m.opponent_team_id or 0,
+                opponent_team_name=m.opponent_team_name or "",
+                was_home=bool(m.was_home),
+                side_unknown=m.was_home is None,
                 kickoff_time=m.kickoff_time,
                 team_score=m.team_score,
                 opponent_score=m.opponent_score,
@@ -167,9 +174,10 @@ def to_gameweek_stats(g: PlayerGameweekRow) -> pb.GameweekStats:
     if len(g.matches) == 1:
         m = g.matches[0]
         stats.fixture_id = m.fixture_id
-        stats.opponent_team_id = m.opponent_team_id
-        stats.opponent_team_name = m.opponent_team_name
-        stats.was_home = m.was_home
+        stats.opponent_team_id = m.opponent_team_id or 0
+        stats.opponent_team_name = m.opponent_team_name or ""
+        stats.was_home = bool(m.was_home)
+        stats.side_unknown = m.was_home is None
         stats.kickoff_time = m.kickoff_time
         if m.team_score is not None:
             stats.team_score = m.team_score

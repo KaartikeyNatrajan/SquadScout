@@ -665,7 +665,7 @@ flowchart LR
     td --> fake --> client --> real --> tmp
 ```
 
-- `make test` runs 346 data-service tests and the 2 agent tests, with no network,
+- `make test` runs 359 data-service tests and the 5 agent tests, with no network,
   GPU or servers needed.
 - The saved data was chosen to cover tricky cases: team 1 played a **Free Hit**
   the week before; team 6 has **3 Arsenal and 3 Chelsea players** (so buying

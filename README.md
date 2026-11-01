@@ -131,6 +131,7 @@ fpl_data_service/
     db/                           SQLite cache; schema.sql is versioned
     fpl/                          FPL API client and the models for its JSON
     names.py                      accent-insensitive name matching
+    team_names.py                 other names clubs go by ("Manchester City" for Man City)
     src/squadscout/               generated, git-ignored
   tests/                          pytest; testdata/ holds saved real FPL responses, fake_fpl.py serves them
   data/fpl.db                     the cache, git-ignored

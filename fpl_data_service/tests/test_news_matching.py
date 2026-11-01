@@ -103,3 +103,19 @@ def test_places_and_managers_are_not_players(matcher):
 def test_nothing_found_in_unrelated_text(matcher):
     result = matcher.find("Weather warning for the weekend")
     assert (result.player_ids, result.team_ids) == ([], [])
+
+
+def test_names_with_inner_capitals_or_special_letters_count_as_capitalised():
+    players = [
+        player(20, "McGinn", "John", "McGinn", 9),
+        player(21, "Ødegaard", "Martin", "Ødegaard", ARS),
+    ]
+    m = Matcher(players, TEAMS)
+
+    assert m.find("McGinn injury blow").player_ids == [20]
+    assert m.find("Ødegaard injury update").player_ids == [21]
+    assert m.find("ODEGAARD OUT").player_ids == [21]
+
+
+def test_found_names_are_reported_for_the_snippet(matcher):
+    assert matcher.find("Bukayo Saka and Haaland doubts").names == ["bukayo saka", "haaland"]

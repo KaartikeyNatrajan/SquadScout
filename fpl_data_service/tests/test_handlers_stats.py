@@ -149,3 +149,7 @@ def test_round2_rounds_halves_away_from_zero():
         -4.2,
         -0.13,
     ]
+
+
+def test_round_half_up_to_other_places():
+    assert [convert.round_half_up(x, 1) for x in (12.25, -12.25, 0.04)] == [12.3, -12.3, 0.0]

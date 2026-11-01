@@ -30,8 +30,11 @@ def _format(moment: datetime) -> str:
 
 
 def save(store: Store, items: Sequence[NewsItem], now: datetime | None = None) -> int:
-    """Save new stories (ones already stored are left alone), delete stories older than
-    RETENTION, and record the sync. Returns how many stories were new."""
+    """Save new stories, delete stories older than RETENTION, and record the sync.
+    Returns how many stories were new.
+
+    A story already stored keeps its text, but gains any players or clubs this copy
+    found (another feed may have had the team context to place them)."""
     now = now or datetime.now(UTC)
     added = 0
     with store.transaction() as conn:
@@ -54,10 +57,13 @@ def save(store: Store, items: Sequence[NewsItem], now: datetime | None = None) -
                     ",".join(item.topics),
                 ),
             )
-            if cursor.rowcount == 0:
-                continue
-            added += 1
-            news_id = cursor.lastrowid
+            if cursor.rowcount:
+                added += 1
+                news_id = cursor.lastrowid
+            else:
+                news_id = conn.execute(
+                    "SELECT id FROM news_items WHERE dedupe_key = ?", (item.dedupe_key,)
+                ).fetchone()["id"]
             conn.executemany(
                 "INSERT OR IGNORE INTO news_players (news_id, player_id) VALUES (?, ?)",
                 [(news_id, pid) for pid in item.player_ids],

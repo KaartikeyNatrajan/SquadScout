@@ -1,4 +1,4 @@
-"""Choosing which stories to show: recent ones, without near-duplicates.
+"""Choosing which stories to show: the newest, without near-duplicates.
 
 Several outlets run the same story with slightly different headlines
 ("Semenyo injury: out until December" / "Semenyo out until December, Maresca
@@ -7,32 +7,37 @@ one story look like three.
 """
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Protocol, TypeVar
 
 from fpl_data.news.matching import tokens
-from fpl_data.news.models import NewsItem
 
 SIMILARITY = 0.6  # headlines sharing this fraction of their words are one story
 
 
-def _similar(a: set[str], b: set[str]) -> bool:
-    return bool(a and b) and len(a & b) / len(a | b) >= SIMILARITY
+class Story(Protocol):
+    title: str
+    published: datetime
 
 
-def select(items: Sequence[NewsItem], limit: int) -> list[NewsItem]:
+S = TypeVar("S", bound=Story)
+
+
+def select(stories: Sequence[S], limit: int) -> list[S]:
     """The newest `limit` stories, skipping any whose headline nearly repeats a newer one."""
-    chosen: list[NewsItem] = []
+    chosen: list[S] = []
     seen: list[set[str]] = []
-    for item in sorted(items, key=lambda i: i.published, reverse=True):
-        words = set(tokens(item.title))
+    for story in sorted(stories, key=lambda s: s.published, reverse=True):
+        words = set(tokens(story.title))
         if any(_similar(words, other) for other in seen):
             continue
-        chosen.append(item)
+        chosen.append(story)
         seen.append(words)
         if len(chosen) == limit:
             break
     return chosen
 
 
-def recent(items: Sequence[NewsItem], now: datetime, window: timedelta) -> list[NewsItem]:
-    return [i for i in items if now - i.published <= window]
+def _similar(a: set[str], b: set[str]) -> bool:
+    """Whether two headlines (as sets of words) share at least SIMILARITY of their words."""
+    return bool(a and b) and len(a & b) / len(a | b) >= SIMILARITY

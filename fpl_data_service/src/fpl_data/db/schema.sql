@@ -131,16 +131,18 @@ CREATE TABLE IF NOT EXISTS player_gameweeks (
 -- The matches behind each player_gameweeks row: one, or two in a double
 -- gameweek. FPL only splits minutes and points by match; everything else is
 -- a weekly total.
--- team_id is the player's club when the gameweek was saved; it tells us
--- which side of the fixture he was on. (A player who later changes club keeps
--- his old club here, which is what we want.)
+-- team_id is the club he played for in that match; it tells us which side of
+-- the fixture he was on. FPL's live data doesn't say, so it's his club when the
+-- gameweek was first saved (kept when the gameweek is downloaded again). NULL
+-- means unknown: the gameweek was first saved after he moved club, and his
+-- current club wasn't in the fixture.
 -- fixture_id has no REFERENCES so the two downloads stay independent; the
 -- queries simply join on it.
 CREATE TABLE IF NOT EXISTS player_gameweek_matches (
     player_id     INTEGER NOT NULL,
     gameweek      INTEGER NOT NULL,
     fixture_id    INTEGER NOT NULL,
-    team_id       INTEGER NOT NULL REFERENCES teams (id),
+    team_id       INTEGER REFERENCES teams (id),  -- NULL = unknown, see above
     minutes       INTEGER NOT NULL DEFAULT 0,
     total_points  INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (player_id, fixture_id),

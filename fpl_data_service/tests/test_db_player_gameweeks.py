@@ -89,3 +89,35 @@ def test_gameweeks_he_sat_out_are_kept(store_with_gameweeks):
 def test_match_points_add_up_to_the_weekly_total(store_with_gameweeks, player_id):
     for week in pg.recent_gameweeks(store_with_gameweeks, player_id, 10):
         assert sum(m.total_points for m in week.matches) == week.total_points
+
+
+def _move_saka_to_chelsea(store):
+    """As if Saka had moved to Chelsea since gameweek 1 (Chelsea weren't in his gameweek-1 fixture)."""
+    with store.transaction() as conn:
+        conn.execute(
+            "UPDATE players SET team_id = (SELECT id FROM teams WHERE name = 'Chelsea') WHERE id = 12"
+        )
+
+
+def test_a_redownloaded_gameweek_keeps_the_club_first_recorded(store_with_gameweeks):
+    _move_saka_to_chelsea(store_with_gameweeks)
+
+    pg.upsert_gameweek_stats(store_with_gameweeks, 1, load_gameweek(1))
+
+    [match] = pg.player_gameweek(store_with_gameweeks, 12, 1).matches
+    assert (match.opponent_team_name, match.was_home) == ("Coventry City", True)
+    assert (match.team_score, match.opponent_score) == (3, 0)
+
+
+def test_a_gameweek_first_saved_after_a_move_has_an_unknown_side(seeded_store):
+    # Gameweek 1 saved for the first time after the move (e.g. after the cache was
+    # rebuilt): Chelsea didn't play in Saka's gameweek-1 fixture, so his side is unknown
+    # rather than guessed wrong.
+    _move_saka_to_chelsea(seeded_store)
+
+    pg.upsert_gameweek_stats(seeded_store, 1, load_gameweek(1))
+
+    [match] = pg.player_gameweek(seeded_store, 12, 1).matches
+    assert (match.opponent_team_id, match.opponent_team_name, match.was_home) == (None, None, None)
+    assert (match.team_score, match.opponent_score) == (3, 0)  # home first
+    assert (match.minutes, match.total_points) == (67, 9)  # still there

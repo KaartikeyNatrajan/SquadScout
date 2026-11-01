@@ -17,28 +17,34 @@ def process(raw: Iterable[RawItem], matcher: Matcher) -> list[NewsItem]:
 
     Match reports and transfer gossip carry no topic, so they are dropped here:
     this keeps the store small and the model's context free of noise.
+
+    Pure CPU work (no I/O), so the refresher runs it in a worker thread.
     """
     stories: dict[str, NewsItem] = {}
     for item in raw:
         summary = text.clean_html(item.description) if item.description else ""
         full_text = f"{item.title}. {summary}"
-        feed_team = item.feed.team_id if item.feed else None
-
         if _NOT_OURS.search(full_text):
             continue
+
         found_topics, trigger_words = topics.tag(full_text)
-        match = matcher.find(full_text, feed_team)
-        if not found_topics or not (match.player_ids or match.team_ids):
+        if not found_topics:
+            continue
+        match = matcher.find(full_text, item.feed.team_id if item.feed else None)
+        if not (match.player_ids or match.team_ids):
             continue
 
         key = text.title_key(item.title)
         if key in stories:
+            # The same headline from another feed. Its feed may know the club (a
+            # team's Google search does), which can reveal players the first copy
+            # couldn't place, so add what it found.
+            _merge(stories[key], match.player_ids, match.team_ids)
             continue
-        focus = [matcher_word for matcher_word in trigger_words]
         stories[key] = NewsItem(
             dedupe_key=key,
             title=item.title,
-            snippet=text.build_snippet(item.title, summary, focus),
+            snippet=text.build_snippet(item.title, summary, match.names, trigger_words),
             source=item.source,
             url=item.link,
             published=item.published,
@@ -47,3 +53,8 @@ def process(raw: Iterable[RawItem], matcher: Matcher) -> list[NewsItem]:
             team_ids=match.team_ids,
         )
     return list(stories.values())
+
+
+def _merge(story: NewsItem, player_ids: list[int], team_ids: list[int]) -> None:
+    story.player_ids = sorted(set(story.player_ids) | set(player_ids))
+    story.team_ids = sorted(set(story.team_ids) | set(team_ids))

@@ -5,9 +5,11 @@ import logging
 
 import grpc
 
-from fpl_data.db import players, transfer_snapshots
+from fpl_data import names, team_names
+from fpl_data.db import players, teams, transfer_snapshots
 from fpl_data.db.players import PlayerRow
 from fpl_data.db.store import Store
+from fpl_data.db.teams import TeamRow
 from fpl_data.fpl.client import FplError
 from fpl_data.handlers import convert
 from fpl_data.handlers.errors import ServiceError, invalid_argument, not_found
@@ -69,6 +71,53 @@ class ServiceBase:
             raise ServiceError(
                 grpc.StatusCode.UNAVAILABLE, f"team {team_id} can't be loaded right now"
             ) from err
+
+    def lookup_team(self, team_id: int, team_name: str) -> TeamRow:
+        """The team a request names, by id or by name, or a ServiceError.
+        An id, if given, wins.
+
+        Names are matched ignoring case and accents, in this order:
+        1. its FPL or short name ("Arsenal", "ARS") or another name it goes by
+           (team_names.py: "Manchester City", "Tottenham");
+        2. a team whose name contains the text or is contained in it, if
+           exactly one does ("Villa" -> Aston Villa, "Brighton & Hove Albion"
+           -> Brighton).
+        """
+        if team_id < 0:
+            raise invalid_argument("team_id must be positive")
+        all_teams = teams.all_teams(self.store)
+        if team_id > 0:
+            # A wrong id is NOT_FOUND rather than an empty answer that looks like
+            # "no fixtures left".
+            for team in all_teams:
+                if team.id == team_id:
+                    return team
+            raise not_found(f"no team with id {team_id}; try team_name instead")
+
+        team_name = team_name.strip()
+        if not team_name:
+            raise invalid_argument("team_id or team_name is required")
+
+        want = names.normalize(team_name)
+        partial: list[TeamRow] = []
+        for team in all_teams:
+            known = {names.normalize(n) for n in team_names.all_names(team.name)}
+            if want in known or want == names.normalize(team.short_name):
+                return team
+            full = names.normalize(team_names.full_name(team.name))
+            if want in full or full in want:
+                partial.append(team)
+        if len(partial) == 1:
+            return partial[0]
+
+        # No single match: list the options so the caller can try again.
+        if partial:
+            raise not_found(
+                f'"{team_name}" matches several teams: {", ".join(t.name for t in partial)}'
+            )
+        raise not_found(
+            f'no team called "{team_name}"; the teams are: {", ".join(t.name for t in all_teams)}'
+        )
 
     def recent_transfers(self) -> dict[int, int]:
         """Each player's net transfers over the last 24 hours (empty until the

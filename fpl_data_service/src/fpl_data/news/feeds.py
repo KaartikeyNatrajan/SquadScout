@@ -3,6 +3,7 @@
 from collections.abc import Sequence
 from urllib.parse import quote_plus
 
+from fpl_data import team_names
 from fpl_data.db.teams import TeamRow
 from fpl_data.news.models import Feed
 
@@ -20,17 +21,6 @@ PUBLISHER_FEEDS = [
     Feed("Sky Sports", "https://www.skysports.com/rss/11661", source="Sky Sports"),
 ]
 
-# FPL's short club names are not what newspapers use. Teams not listed here are
-# searched for under their FPL name.
-TEAM_SEARCH_NAMES = {
-    "Man City": "Manchester City",
-    "Man Utd": "Manchester United",
-    "Spurs": "Tottenham Hotspur",
-    "Nott'm Forest": "Nottingham Forest",
-    "Leeds": "Leeds United",
-    "Newcastle": "Newcastle United",
-    "Wolves": "Wolverhampton Wanderers",
-}
 
 # Two searches per team: one for injuries, one for team news (line-ups, rotation,
 # press conferences). "when:3d" limits results to the last three days.
@@ -47,7 +37,7 @@ def team_feeds(teams: Sequence[TeamRow]) -> list[Feed]:
     """The Google News searches for every team."""
     feeds = []
     for team in teams:
-        search_name = TEAM_SEARCH_NAMES.get(team.name, team.name)
+        search_name = team_names.full_name(team.name)
         for label, words in _SEARCHES:
             feeds.append(
                 google_news_feed(

@@ -66,24 +66,26 @@ def test_title_key_ignores_case_punctuation_and_accents():
 
 
 def test_snippet_is_the_headline_when_there_is_no_summary():
-    assert text.build_snippet("Haaland doubt for derby.", "", []) == "Haaland doubt for derby"
+    assert text.build_snippet("Haaland doubt for derby.", "", [], []) == "Haaland doubt for derby"
 
 
 def test_snippet_adds_the_sentence_that_mentions_the_focus_words():
     summary = (
         "The match kicks off at 3pm. Saka will miss the next three games. Tickets are sold out."
     )
-    snippet = text.build_snippet("Arsenal news", summary, ["saka", "miss"])
+    snippet = text.build_snippet("Arsenal news", summary, ["saka"], ["miss"])
     assert snippet == "Arsenal news. Saka will miss the next three games."
 
 
 def test_snippet_skips_a_summary_that_repeats_the_headline():
-    snippet = text.build_snippet("Saka out for three weeks", "Saka out for three weeks.", ["saka"])
+    snippet = text.build_snippet(
+        "Saka out for three weeks", "Saka out for three weeks.", ["saka"], []
+    )
     assert snippet == "Saka out for three weeks"
 
 
 def test_snippet_is_cut_at_a_word_boundary_within_the_limit():
-    snippet = text.build_snippet("Headline", "word " * 100, ["word"])
+    snippet = text.build_snippet("Headline", "word " * 100, [], ["word"])
     assert len(snippet) <= text.SNIPPET_LENGTH
     assert snippet.endswith("…")
     assert not snippet.endswith(" …")

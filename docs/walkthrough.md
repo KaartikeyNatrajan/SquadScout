@@ -309,7 +309,7 @@ make the top five. A test checks it finds the same best answer as a plain
 try-everything search. It does no database or network work, so the handler runs
 it in a worker thread.
 
-**Tests**: `make test` runs 346 tests for this service without the internet.
+**Tests**: `make test` runs 359 tests for this service without the internet.
 `tests/fake_fpl.py` is a fake FPL website (an `httpx.MockTransport`) that serves
 the saved files from `tests/testdata/`; the real code is pointed at it. Each
 test gets a fresh temporary database. `@pytest.mark.parametrize` runs one test

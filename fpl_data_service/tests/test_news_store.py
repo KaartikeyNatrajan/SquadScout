@@ -3,10 +3,11 @@
 from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 
 from fpl_data.db import news, sync_log
 from fpl_data.news.models import NewsItem
-from fpl_data.news.refresh import NewsRefresher
+from fpl_data.news.refresh import NewsRefresher, NewsRefreshError
 from squadscout.v1 import fpl_pb2 as pb
 from tests.helpers import count_rows, error_of
 
@@ -42,12 +43,14 @@ def test_save_stores_the_snippet_and_links(seeded_store):
     assert sync_log.last_synced(seeded_store, news.DATASET) is not None
 
 
-def test_the_same_story_is_stored_once(seeded_store):
+def test_the_same_story_is_stored_once_and_gains_new_mentions(seeded_store):
     news.save(seeded_store, [story("Saka out")], now=NOW)
-    added = news.save(seeded_store, [story("Saka out")], now=NOW)
+    added = news.save(seeded_store, [story("Saka out", players=(SAKA, 13), teams=(1, 2))], now=NOW)
 
     assert added == 0
     assert count_rows(seeded_store, "news_items") == 1
+    [stored] = news.for_player(seeded_store, 13, NOW - timedelta(days=3))
+    assert (stored.player_ids, stored.team_ids) == ([SAKA, 13], [1, 2])
 
 
 def test_stories_older_than_three_days_are_not_saved_and_old_ones_are_deleted(seeded_store):
@@ -134,6 +137,16 @@ async def test_refresh_does_nothing_within_the_hour_unless_forced(seeded_store):
 
         await refresher.refresh(force=True)
         assert len(requests) == 2 * calls
+
+
+async def test_refresh_when_every_feed_fails_raises_and_retries_next_time(seeded_store):
+    requests: list[str] = []
+    async with httpx.AsyncClient(transport=rss_transport(requests, fail=["http"])) as http:
+        with pytest.raises(NewsRefreshError):
+            await NewsRefresher(seeded_store, http).refresh()
+
+    # Nothing recorded, so the next check (10 minutes later) tries again.
+    assert sync_log.last_synced(seeded_store, news.DATASET) is None
 
 
 async def test_refresh_without_fpl_data_does_nothing(store):
@@ -242,3 +255,13 @@ async def test_get_team_news_by_name(service):
 
     assert (response.team_id, response.team_name) == (1, "Arsenal")
     assert [i.title for i in response.items] == ["Arsenal team news"]
+
+
+async def test_get_team_news_knows_other_club_names(service):
+    response = await service.get_team_news(pb.GetTeamNewsRequest(team_name="Tottenham"))
+    assert response.team_name == "Spurs"
+
+
+async def test_get_team_news_unknown_team(service):
+    err = await error_of(service.get_team_news(pb.GetTeamNewsRequest(team_id=99)))
+    assert "no team with id 99" in err.message
