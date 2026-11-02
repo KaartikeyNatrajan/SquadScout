@@ -12,8 +12,8 @@ frontend can be built against them.
 
 | # | Item | Tier | Where |
 |---|---|---|---|
-| 1 | App backend: users, conversations, API contract and UI events | P1 | langgraph_service (new app DB) |
-| 2 | Cost: usage logging, prompt caching, smaller prompts | P1 | langgraph_service |
+| 1 | Cost: usage logging, prompt caching, smaller prompts (partly done) | P1 | langgraph_service |
+| 2 | App backend: users, conversations, API contract and UI events | P1 | langgraph_service (new app DB) |
 | 3 | Agent tools for the existing RPCs | P2 | langgraph_service |
 | 4 | Eval set for the agent | P2 | langgraph_service |
 | 5 | Mini league (one per user) | P2 | both services |
@@ -28,16 +28,65 @@ frontend can be built against them.
 | 14 | PuLP/OR-Tools optimiser (only if > 3 transfers needed) | P4 | fpl_data_service |
 | 15 | Local model track: Qwen3-4B-AWQ trial vs the eval set | P4 | infrastructure |
 
-Why this order: 1 is the base everything else stands on (follow-ups, remembered team,
-history, the frontend's contract, mini league, login). 2 because spend is already
-noticeable: a single simple question costs $0.0006 on Haiku 5.5 but $0.025 on Opus 5.5,
-which is the code's default model, and real conversations (long history, big team
-payloads, several tool calls) cost many times more. 3 adds the tools that make the agent
-useful; 1 and 2 first means each new tool is built on the final shapes (events, caching).
+Why this order: 1 because spend was already noticeable (a simple question cost $0.025 on
+Opus 5.5, then the default model, vs $0.0006 on Haiku 5.5) and real conversations (long
+history, big team payloads, several tool calls) cost many times more; the same work also
+makes a small local model usable (its 4,096-token context is the limit there). 2 is the
+base everything else stands on (follow-ups, remembered team, history, the frontend's
+contract, mini league, login). 3 adds the tools that make the agent useful; 1 and 2
+first means each new tool is built on the final shapes (formatters, caching, events).
 
 ---
 
-## 1. App backend: users, conversations, API contract, UI events (P1)
+## 1. Cost (P1)
+
+Done (2026-11-01):
+
+- **Measuring.** Every model call's input, cache-read, cache-write and output tokens and
+  its cost are logged, plus a total per chat request (`agent/usage.py`; the server
+  passes a `UsageTracker` to the graph as a callback). Prices are in `PRICES`; models
+  not listed (vLLM) log tokens without a cost.
+- **Default model.** `claude-haiku-5-5` at effort `low` (`config.py`, `.env.example`).
+  Choose a bigger model deliberately after comparing on the eval set (item 4).
+- **Prompt caching.** Claude: a cache marker on the system prompt (caches tools + system
+  prompt) and top-level automatic caching (moves a marker to the end of the conversation
+  on each call), `CACHE_MARKER` in `graph.py`. vLLM: `--enable-prefix-caching` in
+  `vllm_start.sh`. Measured: the second model call of a question reads ~60% of its input
+  from the cache; a repeated question within 5 minutes reads 99.8%.
+- **Smaller tool results.** `agent/format.py`: compact text instead of JSON for
+  `search_players` (~1,400 characters per player instead of ~3,700) and `get_fixtures`.
+
+Measured on "How has Saka been playing?" (Haiku 5.5, low effort): $0.00058 before,
+$0.00034 now (cold cache), $0.00018-0.00021 with a warm cache. Most of what's left is
+output tokens (~300-400 per answer, at 5x the input price).
+
+Also done (2026-11-01, second round):
+
+- **Preloaded team.** When a request has `fpl_team_id`, the server calls `GetManagerTeam`
+  itself and puts a compact summary (`format.manager_team`, ~3,400 characters instead of
+  ~41,000 of JSON; each player with next-GW and 5-GW projections) in front of the
+  question (`agent/context.py`). "Who should I captain?" is one model call, ~$0.0005.
+  With conversations (item 2) this happens once, at the start.
+- **Trimming.** vLLM: `agent/trim.py` swaps the oldest tool results for a short note
+  when the request would pass `VLLM_CONTEXT_BUDGET_TOKENS` (2,500); the current
+  question's results are never removed. Claude: Anthropic's context editing clears old
+  tool results once input passes `CLAUDE_CLEAR_TOOL_RESULTS_AT_TOKENS` (20,000), keeping
+  the newest 3 (checked live on Haiku 5.5). Both only matter once conversations exist.
+- **Shorter answers.** Length rules in `SYSTEM_PROMPT`. On four test questions: answer
+  words -36%, output tokens -25%, cost -12% (output also counts hidden thinking, which the
+  rule doesn't shorten).
+
+Still to do:
+
+- **Reuse earlier results** in follow-ups: a system-prompt rule, once conversations
+  exist (item 2).
+- **Thinking tokens.** Even at effort `low`, some answers spend most output tokens on
+  hidden thinking (531 output tokens for a 73-word answer). Measure on the eval set
+  before changing anything: less thinking may cost answer quality.
+- **New tools get formatters** from the start (item 3).
+- **Check the quality** of the shorter answers on the eval set (item 4).
+
+## 2. App backend: users, conversations, API contract, UI events (P1)
 
 `langgraph_service` becomes the app backend, with its **own** database (Postgres; SQLite
 in dev). Never put user data in the data service's SQLite: that is a disposable cache,
@@ -81,7 +130,7 @@ redraw, the other is complete.
   will have changed.
 - **User context for the model:** at the start of a conversation the backend adds a short
   message: "team 123456, mini league 7890". Not in the system prompt (keeps it frozen
-  for caching, item 2).
+  for caching, item 1).
 - **Play style comes from the conversation, not a stored setting.** The user says "I'm
   happy to take risks"; the system prompt tells the model to adapt (e.g. `max_hit`, safer
   or differential picks). It lasts for the conversation because it's in the history.
@@ -126,27 +175,6 @@ reloaded conversation redraws the same way.
 - Tests: endpoint tests with a fake graph; SSE tests asserting event order and payload
   shapes; persistence tests (restart -> conversation and team id still there).
 
-## 2. Cost (P1)
-
-1. **Measure first.** Log every model call's input, output, cache-read and cache-write
-   tokens and the estimated cost (from `usage_metadata`), per conversation; sum them per
-   turn in the log. Without this nothing below can be verified.
-2. **Default model.** `config.py` and `.env.example` default to `claude-opus-5-5` at
-   effort `medium` (40x Haiku's price for the same question). Decide the default
-   deliberately (Haiku 5.5 at `low` for development).
-3. **Prompt caching.** `cache_control: {"type": "ephemeral"}` on the system prompt and on
-   the last message (`langchain-anthropic` passes `cache_control` on content blocks
-   through). Reads ~0.1x input price, writes 1.25x (5-min TTL) or 2x (1-hour); minimum
-   512 tokens on Haiku 5.5. Keep the system prompt frozen (no dates or ids in it), don't
-   change the tool list mid-conversation, history append-only. Verify with
-   `cache_read_input_tokens`.
-4. **Smaller tool results.** Compact formatters instead of JSON dumps (a `search_players`
-   result is ~3,700 characters today; `GetManagerTeam` is far bigger).
-5. **Fewer round trips.** Preload the user's team at conversation start (the server calls
-   `GetManagerTeam` itself and adds a compact summary to the context message); a
-   system-prompt rule to reuse earlier tool results unless fresh data is asked for.
-6. **Long conversations.** Trim or summarise old tool results once a conversation grows.
-
 ## 3. Agent tools (P2)
 
 Today `TOOLS` in `src/agent/tools.py` has only `search_players` and `get_fixtures`.
@@ -190,7 +218,7 @@ Details:
 - `max_hit` is `optional` in the proto (unset = no limit, 0 = free transfers only): only
   pass it when not `None`.
 - Tools needing the user's team id or league take it from the graph state (the `users`
-  row, item 1), not from the model.
+  row, item 2), not from the model.
 - Leave out `GetPlayerGameweekStats`, `GetPlayerFixtures`, `GetTeamNews` and the
   `current_squad_ids` overrides for now.
 - Fix stale comments in `tools.py` ("Go service", "get_fixtures unimplemented").
@@ -201,7 +229,7 @@ Details:
 player questions, a head-to-head question, a follow-up pair (tests memory), a
 play-style variation ("I'm happy to take a hit"), an off-topic one. Check: the right
 tools and arguments; numbers in the answer appear in tool output; nothing invented;
-off-topic refused. Record tokens and cost per question (item 2) so quality and cost are
+off-topic refused. Record tokens and cost per question (item 1) so quality and cost are
 compared together across changes.
 
 ## 5. Mini league, one per user (P2)

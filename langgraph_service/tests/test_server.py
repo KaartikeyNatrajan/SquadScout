@@ -86,3 +86,37 @@ def test_chat_stream_skips_thinking_blocks(client):
 
     assert body.count("event: token") == 1
     assert '"text": "Saka"' in body
+
+
+class RecordingGraph:
+    """Stands in for the graph; remembers the state it was started with."""
+
+    async def ainvoke(self, state, **kwargs):
+        self.state = state
+        return {"messages": [AIMessage("ok")]}
+
+
+def test_chat_with_a_team_id_puts_the_team_before_the_question(client, monkeypatch):
+    async def fake_summary(team_id):
+        return f"TEAM {team_id}"
+
+    monkeypatch.setattr(server.context, "team_summary", fake_summary)
+    server.app.state.graph = graph = RecordingGraph()
+
+    client.post("/chat", json={"message": "Who should I captain?", "fpl_team_id": 6})
+
+    [first] = graph.state["messages"]
+    assert first.content.startswith("[My FPL team, loaded by the app]\nTEAM 6")
+    assert first.content.endswith("[My question]\nWho should I captain?")
+
+
+def test_chat_without_a_team_id_loads_nothing(client, monkeypatch):
+    async def must_not_be_called(team_id):
+        raise AssertionError("no team id was given")
+
+    monkeypatch.setattr(server.context, "team_summary", must_not_be_called)
+    server.app.state.graph = graph = RecordingGraph()
+
+    client.post("/chat", json={"message": "Hi"})
+
+    assert graph.state["messages"][0].content == "Hi"

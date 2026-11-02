@@ -30,6 +30,12 @@ nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader || {
 # --enable-auto-tool-choice + --tool-call-parser
 #                     without these, tool calls come back as plain text and the
 #                     LangGraph agent never routes to the tools node.
+# --enable-prefix-caching
+#                     reuse the work for a prompt's beginning when the next request
+#                     starts the same way (tools + system prompt + earlier turns):
+#                     faster replies. Recent vLLM turns it on by default; written
+#                     out so it's deliberate. It keeps the cache in spare VRAM, so
+#                     on a small GPU old entries are dropped quickly.
 exec vllm serve "$MODEL" \
   --served-model-name "$SERVED_NAME" \
   --host 0.0.0.0 --port "$PORT" \
@@ -38,5 +44,6 @@ exec vllm serve "$MODEL" \
   --max-num-seqs "$MAX_SEQS" \
   --gpu-memory-utilization "$GPU_UTIL" \
   --enforce-eager \
+  --enable-prefix-caching \
   --enable-auto-tool-choice \
   --tool-call-parser "$TOOL_PARSER"

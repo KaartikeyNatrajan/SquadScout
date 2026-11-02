@@ -18,14 +18,18 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage
 from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel, Field
 
+from agent import context
 from agent.graph import build_graph
 from agent.tools import close_channel
+from agent.usage import UsageTracker
 from config import settings
 
+# Show our own INFO lines (the model in use, tokens and cost per chat) in the
+# terminal next to uvicorn's. Python prints only warnings unless told otherwise.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # What the client is told when the agent can't finish. The details go to the log.
@@ -69,15 +73,28 @@ class ChatResponse(BaseModel):
 
 
 # The graph's starting state (see agent/state.py): the conversation so far is
-# just the user's question.
-def _initial_state(req: ChatRequest) -> dict:
-    return {"messages": [HumanMessage(req.message)], "fpl_team_id": req.fpl_team_id}
+# just the user's question, with their team in front of it when the request
+# gives a team id (agent/context.py: saves the model a tool round trip).
+async def _initial_state(req: ChatRequest) -> dict:
+    team = await context.team_summary(req.fpl_team_id) if req.fpl_team_id else None
+    return {
+        "messages": [context.first_message(req.message, team)],
+        "fpl_team_id": req.fpl_team_id,
+    }
 
 
 # recursion_limit caps the number of graph steps, so a model that keeps
 # calling tools forever gets stopped with an error instead of looping.
-def _run_config() -> dict:
-    return {"recursion_limit": settings.graph_recursion_limit}
+# callbacks: LangChain calls these on every model call inside the graph; the
+# UsageTracker logs each call's tokens and cost.
+def _run_config(tracker: UsageTracker) -> dict:
+    return {"recursion_limit": settings.graph_recursion_limit, "callbacks": [tracker]}
+
+
+def _new_tracker() -> UsageTracker:
+    """A fresh token counter for one chat request, priced for the model in use."""
+    model = settings.anthropic_model if settings.llm_provider == "anthropic" else settings.llm_model
+    return UsageTracker(model)
 
 
 # Decorators like @app.get / @app.post register the function below them as the
@@ -92,14 +109,18 @@ async def chat(req: ChatRequest) -> ChatResponse:
     """Run the graph to completion and return only the final answer."""
     # ainvoke runs the whole graph (model -> tools -> model ...) to the end and
     # returns the final state. The last message in it is the model's answer.
+    tracker = _new_tracker()
     try:
-        result = await app.state.graph.ainvoke(_initial_state(req), config=_run_config())
+        state = await _initial_state(req)
+        result = await app.state.graph.ainvoke(state, config=_run_config(tracker))
     except GraphRecursionError as err:
         logger.warning("chat stopped at the step limit: %s", err)
         raise HTTPException(status_code=504, detail=_TOO_MANY_STEPS) from err
     except Exception as err:  # model down or erroring, a bug in a node, ...
         logger.exception("chat failed")
         raise HTTPException(status_code=502, detail=_AGENT_FAILED) from err
+    finally:
+        tracker.log_total()  # also for failed requests: they cost money too
     # .text, not .content: with Claude, content also holds thinking blocks.
     return ChatResponse(reply=result["messages"][-1].text)
 
@@ -119,9 +140,11 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
     # can't change it: it's reported as an "error" event, and "done" always ends
     # the stream so the client knows to stop waiting.
     async def events() -> AsyncIterator[str]:
+        tracker = _new_tracker()
         try:
+            state = await _initial_state(req)
             async for event in app.state.graph.astream_events(
-                _initial_state(req), config=_run_config(), version="v2"
+                state, config=_run_config(tracker), version="v2"
             ):
                 kind = event["event"]
                 if kind == "on_tool_start":
@@ -140,6 +163,7 @@ async def chat_stream(req: ChatRequest) -> StreamingResponse:
         except Exception:
             logger.exception("chat stream failed")
             yield _sse("error", {"message": _AGENT_FAILED})
+        tracker.log_total()
         yield _sse("done", {})
 
     return StreamingResponse(events(), media_type="text/event-stream")

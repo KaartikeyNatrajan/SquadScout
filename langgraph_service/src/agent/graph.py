@@ -28,6 +28,7 @@ from langgraph.prebuilt import ToolNode
 
 from agent.state import AgentState
 from agent.tools import TOOLS
+from agent.trim import estimate_tokens, trim_tool_results
 from config import settings
 
 # Sent as the first message of every model call. It sets the model's rules;
@@ -40,7 +41,15 @@ Rules:
 - Look players up with search_players before using any player_id or team_id.
 - If a tool returns an ERROR, tell the user briefly that the data is unavailable
   right now. Do not invent numbers.
-- Keep answers short and cite the numbers you used.
+- If the conversation starts with the user's FPL team (loaded by the app), use it
+  for questions about their team. Don't ask for it and don't look it up again.
+
+Length:
+- Keep answers short: at most about 120 words, or up to 5 bullet points.
+  Write more only if the user asks for detail.
+- Start with the answer. No introduction, no repeating the question, no closing
+  advice the user didn't ask for.
+- Cite the numbers you used.
 
 How to work:
 - If you need more data, call the tool immediately. Never write "let me fetch"
@@ -105,16 +114,67 @@ CLAUDE_FALLBACK_MODELS = {
 
 REFUSAL_REPLY = "Sorry, I can't help with that request."
 
+# Prompt caching (Claude only). Every model call re-sends everything: the tool
+# list, the system prompt and the whole conversation so far. Claude can keep
+# the part it has already processed for 5 minutes and re-read it for about a
+# tenth of the normal input price (writing it costs 1.25x, once).
+# Caching works on prefixes: a request reuses the cache only up to the first
+# byte that differs. So the beginning must stay identical between calls:
+# never put changing values (dates, ids) in SYSTEM_PROMPT, never change TOOLS
+# mid-conversation, and never edit earlier messages.
+CACHE_MARKER = {"type": "ephemeral"}  # "ephemeral" = the 5-minute cache
+
+
+def system_message() -> SystemMessage:
+    """The system prompt as the first message of every model call.
+
+    For Claude it carries a cache marker: "cache everything up to here", which
+    is the tool list and the system prompt. They are the same on every call,
+    so after the first call they are always read from the cache.
+    """
+    if settings.llm_provider == "anthropic":
+        block = {"type": "text", "text": SYSTEM_PROMPT, "cache_control": CACHE_MARKER}
+        return SystemMessage(content=[block])
+    return SystemMessage(SYSTEM_PROMPT)
+
+
+# Anthropic's "context editing" (a beta feature): once a request gets long,
+# Anthropic removes old tool results from it before the model reads it, keeping
+# the newest few. The model sees a note where each one was. This is Claude's
+# version of agent/trim.py, done on Anthropic's side so the prompt cache and
+# Claude's thinking blocks stay valid.
+CONTEXT_EDITING_BETA = "context-management-2025-06-27"
+TOOL_RESULTS_KEPT = 3
+
+
+def clear_old_tool_results() -> dict:
+    return {
+        "edits": [
+            {
+                "type": "clear_tool_uses_20250919",
+                "trigger": {
+                    "type": "input_tokens",
+                    "value": settings.claude_clear_tool_results_at_tokens,
+                },
+                "keep": {"type": "tool_uses", "value": TOOL_RESULTS_KEPT},
+            }
+        ]
+    }
+
 
 def build_llm() -> BaseChatModel:
     """The chat model the agent talks to, picked by LLM_PROVIDER."""
     if settings.llm_provider == "anthropic":
-        options: dict = {}
+        # model_kwargs are added to every request as-is. A top-level
+        # `cache_control` turns on automatic caching: Claude moves a cache marker
+        # to the end of the conversation on each call, so the next call (the
+        # model reading a tool result, or a follow-up question) reads all of it
+        # from the cache. This complements the fixed marker in system_message().
+        request_options: dict = {"cache_control": CACHE_MARKER}
+        betas = [CONTEXT_EDITING_BETA]
         if settings.anthropic_model in CLAUDE_FALLBACK_MODELS:
-            options = {
-                "betas": ["server-side-fallback-2026-07-01"],
-                "model_kwargs": {"fallbacks": "default"},
-            }
+            betas.append("server-side-fallback-2026-07-01")
+            request_options["fallbacks"] = "default"
         # Only pass the key if one is configured; otherwise the client reads
         # ANTHROPIC_API_KEY from the environment. No temperature: current Claude
         # models reject it (effort is the setting that matters instead).
@@ -125,11 +185,16 @@ def build_llm() -> BaseChatModel:
             effort=settings.anthropic_effort,
             default_request_timeout=settings.llm_timeout_s,
             max_retries=1,
+            model_kwargs=request_options,
+            context_management=clear_old_tool_results(),
+            betas=betas,
             **({"api_key": key} if key else {}),
-            **options,
         )
     # vLLM speaks the same HTTP API as OpenAI, so the OpenAI client works as
-    # long as base_url points at vLLM.
+    # long as base_url points at vLLM. vLLM caches repeated prompt beginnings by
+    # itself (prefix caching, see infrastructure/vllm/vllm_start.sh), so no
+    # markers are needed. stream_usage=True: report token counts when streaming
+    # too, for the usage log (agent/usage.py).
     return ChatOpenAI(
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
@@ -137,6 +202,7 @@ def build_llm() -> BaseChatModel:
         temperature=settings.llm_temperature,
         timeout=settings.llm_timeout_s,
         max_retries=1,
+        stream_usage=True,
     )
 
 
@@ -145,11 +211,19 @@ def build_graph():
     # bind_tools attaches the tool schemas to every request, which is how the
     # model learns which tools exist.
     llm = build_llm().bind_tools(TOOLS)
+    system = system_message()
 
     # The model step. The system prompt is added on every call instead of being
     # stored in the state, so it can't pile up or get lost.
     async def agent_node(state: AgentState) -> dict:
-        messages = [SystemMessage(SYSTEM_PROMPT), *state["messages"]]
+        history = state["messages"]
+        if settings.llm_provider == "vllm":
+            # The local model's window is small: leave out old tool results if
+            # needed (only from this request; the state keeps them). The budget
+            # covers the system prompt too, so its share is taken off first.
+            budget = settings.vllm_context_budget_tokens - estimate_tokens([system])
+            history = trim_tool_results(history, budget)
+        messages = [system, *history]
         # response is an AIMessage: either text, or tool_calls, or both.
         response = await llm.ainvoke(messages)
         # Claude's safety checks can decline a request (rare, and usually
